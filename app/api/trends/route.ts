@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+// ✅ Interfaces
 interface RedditPost {
   data: {
     title: string;
@@ -19,6 +20,7 @@ interface RedditResponse {
   };
 }
 
+// ✅ Keyword categories
 const CATEGORY_KEYWORDS = {
   tech: [
     'ai', 'artificial intelligence', 'tech', 'technology', 'software', 'hardware',
@@ -66,6 +68,7 @@ const CATEGORY_KEYWORDS = {
   ],
 };
 
+// ✅ Subreddit → category mapping
 const SUBREDDIT_CATEGORIES: Record<string, string> = {
   technology: 'tech',
   programming: 'tech',
@@ -94,6 +97,7 @@ const SUBREDDIT_CATEGORIES: Record<string, string> = {
   football: 'sports',
 };
 
+// ✅ Keyword-based categorization
 const categorizeByKeywords = (text: string): { category: string; confidence: number } => {
   const lowerText = text.toLowerCase();
   const scores: Record<string, number> = {
@@ -114,126 +118,85 @@ const categorizeByKeywords = (text: string): { category: string; confidence: num
 
   const entries = Object.entries(scores);
   const maxScore = Math.max(...entries.map(([_, score]) => score));
-  
-  if (maxScore === 0) {
-    return { category: 'other', confidence: 0 };
-  }
+  if (maxScore === 0) return { category: 'other', confidence: 0 };
 
   const topCategory = entries.find(([_, score]) => score === maxScore)?.[0] || 'other';
   const confidence = maxScore / 3;
-
   return { category: topCategory, confidence: Math.min(confidence, 1) };
 };
 
-const categorizePost = (title: string, subreddit: string, selftext?: string): 'tech' | 'politics' | 'entertainment' | 'science' | 'sports' | 'other' => {
+// ✅ Final category logic
+const categorizePost = (title: string, subreddit: string, selftext?: string) => {
   const subredditCategory = SUBREDDIT_CATEGORIES[subreddit.toLowerCase()];
-  if (subredditCategory) {
-    return subredditCategory as any;
-  }
+  if (subredditCategory) return subredditCategory as any;
 
   const textToAnalyze = `${title} ${selftext || ''}`.substring(0, 500);
   const { category, confidence } = categorizeByKeywords(textToAnalyze);
-
-  if (confidence > 0.3) {
-    return category as any;
-  }
-
-  return 'other';
+  return confidence > 0.3 ? category : 'other';
 };
 
+// ✅ Clean titles
 const extractKeyTopic = (title: string): string => {
   let cleaned = title
     .replace(/^\[.*?\]\s*/, '')
     .replace(/^[A-Z]+:\s*/, '')
     .trim();
-  
-  if (cleaned.length > 60) {
-    cleaned = cleaned.substring(0, 57) + '...';
-  }
-  
+
+  if (cleaned.length > 60) cleaned = cleaned.substring(0, 57) + '...';
   return cleaned;
 };
 
+// ✅ Main API handler
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const region = searchParams.get('region') || 'global';
-    
+
     console.log('🌍 Fetching trends for region:', region);
 
     let subreddit = 'all';
-    
-    if (region === 'india') {
-      subreddit = 'india+cricket+bollywood+IndiaSpeaks';
-    } else if (region === 'us') {
-      subreddit = 'news+politics+nfl+nba';
-    } else if (region === 'uk') {
-      subreddit = 'unitedkingdom+ukpolitics+premierleague';
-    } else if (region === 'europe') {
-      subreddit = 'europe+soccer+formula1';
-    }
-    
+    if (region === 'india') subreddit = 'india+cricket+bollywood+IndiaSpeaks';
+    else if (region === 'us') subreddit = 'news+politics+nfl+nba';
+    else if (region === 'uk') subreddit = 'unitedkingdom+ukpolitics+premierleague';
+    else if (region === 'europe') subreddit = 'europe+soccer+formula1';
+
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=50`;
-    
     console.log('📡 Fetching from:', url);
-    
+
     const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Brainwave/1.0',
-      },
+      headers: { 'User-Agent': 'Brainwave/1.0' },
       cache: 'no-store',
     });
 
-    console.log('📥 Reddit response status:', response.status);
-
-    if (!response.ok) {
-      console.error('Reddit API error:', response.status, response.statusText);
-      throw new Error(`Failed to fetch from Reddit: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Failed to fetch from Reddit: ${response.status}`);
 
     const data: RedditResponse = await response.json();
-    console.log('✅ Received posts:', data.data.children.length);
-    
-    const topics = data.data.children
+    const posts = data.data.children;
+
+    const topics = posts
       .filter(post => post.data.score > 100)
       .slice(0, 40)
       .map((post, index) => {
-        const maxScore = data.data.children[0]?.data.score || 1000;
-        const intensity = Math.min(post.data.score / maxScore, 1);
-        
+        const intensity = Math.min(post.data.score / (posts[0]?.data.score || 1000), 1);
         return {
           id: `reddit-${index}`,
           name: extractKeyTopic(post.data.title),
           category: categorizePost(post.data.title, post.data.subreddit, post.data.selftext),
-          intensity: intensity,
+          intensity,
           summary: `${post.data.score.toLocaleString()} upvotes • ${post.data.num_comments.toLocaleString()} comments`,
           source: `r/${post.data.subreddit}`,
           timestamp: new Date(post.data.created_utc * 1000).toISOString(),
           url: `https://reddit.com${post.data.permalink}`,
-          redditData: {
-            score: post.data.score,
-            comments: post.data.num_comments,
-          },
         };
       });
 
-    console.log('✅ Processed topics:', topics.length);
-
-    return NextResponse.json(
-      { topics, updatedAt: new Date().toISOString() },
-      {
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      }
-    );
-    
+    return NextResponse.json({ topics, updatedAt: new Date().toISOString() });
   } catch (error) {
     console.error('❌ Error in trends API:', error);
     return NextResponse.json(
-      { 
+      {
         error: error instanceof Error ? error.message : 'Failed to fetch trending topics',
-        details: error instanceof Error ? error.stack : undefined
+        details: error instanceof Error ? error.stack : undefined,
       },
       { status: 500 }
     );
