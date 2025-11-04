@@ -19,7 +19,6 @@ interface RedditResponse {
   };
 }
 
-// Enhanced keyword-based categorization
 const CATEGORY_KEYWORDS = {
   tech: [
     'ai', 'artificial intelligence', 'tech', 'technology', 'software', 'hardware',
@@ -42,7 +41,7 @@ const CATEGORY_KEYWORDS = {
   politics: [
     'politics', 'political', 'government', 'president', 'election', 'vote',
     'congress', 'senate', 'law', 'court', 'justice', 'trump', 'biden',
-    'republican', 'democrat', 'policy', 'bill', 'legislation','china', 'war',
+    'republican', 'democrat', 'policy', 'bill', 'legislation', 'war',
     'military', 'defense', 'nato', 'un', 'united nations', 'diplomat',
     'minister', 'parliament', 'prime minister', 'putin', 'xi jinping',
     'campaign', 'protest', 'rally', 'debate', 'scandal', 'investigation'
@@ -67,7 +66,6 @@ const CATEGORY_KEYWORDS = {
   ],
 };
 
-// Subreddit-based categorization (backup)
 const SUBREDDIT_CATEGORIES: Record<string, string> = {
   technology: 'tech',
   programming: 'tech',
@@ -106,7 +104,6 @@ const categorizeByKeywords = (text: string): { category: string; confidence: num
     sports: 0,
   };
 
-  // Count keyword matches for each category
   Object.entries(CATEGORY_KEYWORDS).forEach(([category, keywords]) => {
     keywords.forEach(keyword => {
       if (lowerText.includes(keyword.toLowerCase())) {
@@ -115,7 +112,6 @@ const categorizeByKeywords = (text: string): { category: string; confidence: num
     });
   });
 
-  // Find category with highest score
   const entries = Object.entries(scores);
   const maxScore = Math.max(...entries.map(([_, score]) => score));
   
@@ -124,23 +120,20 @@ const categorizeByKeywords = (text: string): { category: string; confidence: num
   }
 
   const topCategory = entries.find(([_, score]) => score === maxScore)?.[0] || 'other';
-  const confidence = maxScore / 3; // Normalize confidence (3+ matches = high confidence)
+  const confidence = maxScore / 3;
 
   return { category: topCategory, confidence: Math.min(confidence, 1) };
 };
 
 const categorizePost = (title: string, subreddit: string, selftext?: string): 'tech' | 'politics' | 'entertainment' | 'science' | 'sports' | 'other' => {
-  // First try subreddit mapping
   const subredditCategory = SUBREDDIT_CATEGORIES[subreddit.toLowerCase()];
   if (subredditCategory) {
     return subredditCategory as any;
   }
 
-  // Then use keyword analysis on title + selftext
-  const textToAnalyze = `${title} ${selftext || ''}`.substring(0, 500); // Limit length
+  const textToAnalyze = `${title} ${selftext || ''}`.substring(0, 500);
   const { category, confidence } = categorizeByKeywords(textToAnalyze);
 
-  // If confidence is high enough, use keyword categorization
   if (confidence > 0.3) {
     return category as any;
   }
@@ -149,13 +142,11 @@ const categorizePost = (title: string, subreddit: string, selftext?: string): 't
 };
 
 const extractKeyTopic = (title: string): string => {
-  // Remove common prefixes and clean up
   let cleaned = title
-    .replace(/^\[.*?\]\s*/, '') // Remove [tags]
-    .replace(/^[A-Z]+:\s*/, '') // Remove "NEWS:" etc
+    .replace(/^\[.*?\]\s*/, '')
+    .replace(/^[A-Z]+:\s*/, '')
     .trim();
   
-  // Truncate if too long
   if (cleaned.length > 60) {
     cleaned = cleaned.substring(0, 57) + '...';
   }
@@ -165,13 +156,11 @@ const extractKeyTopic = (title: string): string => {
 
 export async function GET(request: Request) {
   try {
-    // Parse URL parameters
     const { searchParams } = new URL(request.url);
     const region = searchParams.get('region') || 'global';
     
     console.log('🌍 Fetching trends for region:', region);
 
-    // Determine which subreddit to fetch based on region
     let subreddit = 'all';
     
     if (region === 'india') {
@@ -186,23 +175,28 @@ export async function GET(request: Request) {
     
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=50`;
     
+    console.log('📡 Fetching from:', url);
+    
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Brainwave/1.0',
       },
-      next: { revalidate: 300 }, // Cache for 5 minutes
+      cache: 'no-store',
     });
 
+    console.log('📥 Reddit response status:', response.status);
+
     if (!response.ok) {
-      throw new Error('Failed to fetch from Reddit');
+      console.error('Reddit API error:', response.status, response.statusText);
+      throw new Error(`Failed to fetch from Reddit: ${response.status}`);
     }
 
     const data: RedditResponse = await response.json();
+    console.log('✅ Received posts:', data.data.children.length);
     
-    // Process and transform Reddit posts into our Topic format
     const topics = data.data.children
-      .filter(post => post.data.score > 100) // Only high-engagement posts
-      .slice(0, 40) // Limit to 40 neurons
+      .filter(post => post.data.score > 100)
+      .slice(0, 40)
       .map((post, index) => {
         const maxScore = data.data.children[0]?.data.score || 1000;
         const intensity = Math.min(post.data.score / maxScore, 1);
@@ -223,12 +217,24 @@ export async function GET(request: Request) {
         };
       });
 
-    return NextResponse.json({ topics, updatedAt: new Date().toISOString() });
+    console.log('✅ Processed topics:', topics.length);
+
+    return NextResponse.json(
+      { topics, updatedAt: new Date().toISOString() },
+      {
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      }
+    );
     
   } catch (error) {
-    console.error('Error fetching Reddit data:', error);
+    console.error('❌ Error in trends API:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch trending topics' },
+      { 
+        error: error instanceof Error ? error.message : 'Failed to fetch trending topics',
+        details: error instanceof Error ? error.stack : undefined
+      },
       { status: 500 }
     );
   }
