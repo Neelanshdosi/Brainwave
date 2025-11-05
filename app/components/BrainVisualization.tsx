@@ -17,15 +17,13 @@ export default function BrainVisualization() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([
     'tech', 'politics', 'entertainment', 'science', 'sports', 'other'
   ]);
-  const [selectedRegion, setSelectedRegion] = useState('global');
   const [showConnections, setShowConnections] = useState(false);
   
-  const { topics, loading, error, lastUpdate, refetch } = useTrendingTopics(selectedRegion);
+  const { topics, loading, error, lastUpdate, refetch } = useTrendingTopics();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [hoveredTopic, setHoveredTopic] = useState<Topic | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Filter topics based on selected categories
   const filteredTopics = useMemo(() => {
     return topics.filter(topic => selectedCategories.includes(topic.category));
   }, [topics, selectedCategories]);
@@ -37,18 +35,14 @@ export default function BrainVisualization() {
   };
 
   const handleCategoryToggle = (category: string) => {
-    setSelectedCategories(prev => {
-      if (prev.includes(category)) {
-        return prev.filter(c => c !== category);
-      } else {
-        return [...prev, category];
-      }
-    });
+    setSelectedCategories(prev =>
+      prev.includes(category)
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    );
   };
 
-  const handleRegionChange = (region: string) => {
-    setSelectedRegion(region);
-  };
+  // Region removed (Global only)
 
   const toggleConnections = () => {
     setShowConnections(prev => !prev);
@@ -94,8 +88,6 @@ export default function BrainVisualization() {
       <FilterPanel
         selectedCategories={selectedCategories}
         onCategoryToggle={handleCategoryToggle}
-        selectedRegion={selectedRegion}
-        onRegionChange={handleRegionChange}
         showConnections={showConnections}
         onConnectionsToggle={toggleConnections}
         refreshing={refreshing}
@@ -123,10 +115,8 @@ export default function BrainVisualization() {
           
           <Stars radius={100} depth={50} count={5000} factor={4} fade speed={1} />
           <BrainBoundary />
-          {/* Neural Connections */}
           {showConnections && <NeuralConnections topics={filteredTopics} />}
 
-          {/* Neurons */}
           {filteredTopics.map((topic) => (
             <Neuron
               key={topic.id}
@@ -147,7 +137,6 @@ export default function BrainVisualization() {
             maxDistance={15}
           />
 
-          {/* Ground contact shadows for depth perception */}
           <ContactShadows
             position={[0, -0.6, 0]}
             opacity={0.35}
@@ -160,39 +149,21 @@ export default function BrainVisualization() {
         </Suspense>
       </Canvas>
 
-      {/* Header */}
+      {/* ✅ Updated Header */}
       <div className="absolute top-4 left-4 z-10">
         <h1 className="text-4xl font-bold text-white mb-1">Brainwave</h1>
-        <p className="text-gray-400">The world's thoughts, visualized.</p>
+        <p className="text-gray-400">Global news, visualized in real-time.</p>
         {lastUpdate && (
           <p className="text-gray-500 text-xs mt-1">
             Updated {lastUpdate.toLocaleTimeString()}
           </p>
         )}
         <p className="text-purple-400 text-sm mt-1">
-          {filteredTopics.length} / {topics.length} neurons visible
+          {filteredTopics.length} / {topics.length} stories active
         </p>
-        {/* Color Legend */}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            { id: 'tech', label: 'Tech' },
-            { id: 'politics', label: 'Politics' },
-            { id: 'entertainment', label: 'Entertainment' },
-            { id: 'science', label: 'Science' },
-            { id: 'sports', label: 'Sports' },
-            { id: 'other', label: 'Other' },
-          ].map(({ id, label }) => (
-            <div key={id} className="flex items-center gap-2 bg-gray-900/70 border border-gray-700 rounded-full px-2.5 py-1">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[id as keyof typeof CATEGORY_COLORS] }} />
-              <span className="text-xs text-gray-300">{label}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* Refresh moved into FilterPanel row */}
-
-      {/* Neural Connections Slider at bottom */}
+      {/* Neural Connections Toggle */}
       <div className="absolute bottom-4 right-4 z-10">
         <button
           onClick={toggleConnections}
@@ -207,8 +178,16 @@ export default function BrainVisualization() {
               <div className="text-gray-500 text-xs">Show topic relationships</div>
             </div>
           </div>
-          <div className={`w-14 h-7 rounded-full transition-colors relative ${showConnections ? 'bg-purple-500' : 'bg-gray-600'}`}>
-            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-transform ${showConnections ? 'translate-x-7' : 'translate-x-0.5'}`} />
+          <div
+            className={`w-14 h-7 rounded-full transition-colors relative ${
+              showConnections ? 'bg-purple-500' : 'bg-gray-600'
+            }`}
+          >
+            <div
+              className={`absolute top-0.5 w-6 h-6 bg-white rounded-full transition-transform ${
+                showConnections ? 'translate-x-7' : 'translate-x-0.5'
+              }`}
+            />
           </div>
         </button>
       </div>
@@ -216,10 +195,11 @@ export default function BrainVisualization() {
       {/* Instructions */}
       <div className="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur-sm p-4 rounded-lg border border-gray-700 z-10 max-w-xs">
         <p className="text-gray-300 text-sm">
-          <span className="font-semibold text-white">Hover</span> to preview<br/>
-          <span className="font-semibold text-white">Click</span> for details<br/>
-          <span className="font-semibold text-white">Filter</span> by category/region<br/>
-          <span className="font-semibold text-white">Drag</span> to rotate • <span className="font-semibold text-white">Scroll</span> to zoom
+          <span className="font-semibold text-white">Hover</span> to preview<br />
+          <span className="font-semibold text-white">Click</span> for details<br />
+          <span className="font-semibold text-white">Filter</span> by category<br />
+          <span className="font-semibold text-white">Drag</span> to rotate •{' '}
+          <span className="font-semibold text-white">Scroll</span> to zoom
         </p>
         <p className="text-gray-500 text-xs mt-3 pt-3 border-t border-gray-700">
           Made By Neelansh D

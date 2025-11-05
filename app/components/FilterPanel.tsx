@@ -1,14 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Filter, Globe, X, RefreshCw } from 'lucide-react';
+import { Filter, X, RefreshCw } from 'lucide-react';
 import { CATEGORY_COLORS } from '@/lib/neuronPosition';
 
 interface FilterPanelProps {
   selectedCategories: string[];
   onCategoryToggle: (category: string) => void;
-  selectedRegion: string;
-  onRegionChange: (region: string) => void;
   showConnections: boolean;
   onConnectionsToggle: () => void;
   refreshing: boolean;
@@ -24,19 +22,11 @@ const CATEGORIES = [
   { id: 'other', label: 'Other', color: '#a29bfe' },
 ];
 
-const REGIONS = [
-  { id: 'global', label: '🌍 Global', flag: '🌍' },
-  { id: 'us', label: '🇺🇸 United States', flag: '🇺🇸' },
-  { id: 'india', label: '🇮🇳 India', flag: '🇮🇳' },
-  { id: 'uk', label: '🇬🇧 United Kingdom', flag: '🇬🇧' },
-  { id: 'europe', label: '🇪🇺 Europe', flag: '🇪🇺' },
-];
+// Region options removed; always global
 
 export default function FilterPanel({
   selectedCategories,
   onCategoryToggle,
-  selectedRegion,
-  onRegionChange,
   showConnections,
   onConnectionsToggle,
   refreshing,
@@ -169,45 +159,7 @@ export default function FilterPanel({
             </div>
           </div>
 
-          {/* Region Section */}
-          <div className="mb-6 pb-6 border-b border-gray-700">
-            <h4 className="text-gray-300 font-semibold text-sm mb-3 flex items-center gap-2">
-              <Globe size={16} />
-              Region
-            </h4>
-            <div className="space-y-2">
-              {REGIONS.map((region) => {
-                const isSelected = selectedRegion === region.id;
-                return (
-                  <button
-                    key={region.id}
-                    onClick={() => onRegionChange(region.id)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${
-                      isSelected
-                        ? 'bg-gray-800 border-2 border-purple-500'
-                        : 'bg-gray-800/50 border-2 border-transparent hover:border-gray-600'
-                    }`}
-                  >
-                    <span className="text-2xl">{region.flag}</span>
-                    <span className="text-gray-300 flex-1 text-left text-sm">
-                      {region.label.replace(region.flag + ' ', '')}
-                    </span>
-                    <div
-                      className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
-                        isSelected
-                          ? 'bg-purple-500 border-purple-500'
-                          : 'border-gray-600'
-                      }`}
-                    >
-                      {isSelected && (
-                        <div className="w-2 h-2 bg-white rounded-full" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* Region selection removed (Global only) */}
 
           {/* Neural Connections Toggle removed from Filter */}
 
