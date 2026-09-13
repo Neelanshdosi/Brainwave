@@ -99,10 +99,15 @@ const parsePubDate = (pubDate: string): string => {
 
 export async function GET(request: Request) {
   try {
-    const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
+    const NEWSDATA_API_KEY = 
+      process.env.NEWSDATA_API_KEY || 
+      process.env.NEXT_PUBLIC_NEWSDATA_API_KEY || 
+      process.env.NEWSDATA_KEY || 
+      process.env.NEWS_DATA_API_KEY;
     
     if (!NEWSDATA_API_KEY) {
-      throw new Error('NewsData.io API key not configured (NEWSDATA_API_KEY)');
+      const envKeys = Object.keys(process.env).filter(k => k.includes('NEWS') || k.includes('KEY') || k.includes('DATA')).join(', ');
+      throw new Error(`NewsData.io API key not configured (NEWSDATA_API_KEY). Matching env keys found: [${envKeys || 'none'}]`);
     }
 
     const fetchArticles = async (baseUrl: string, maxArticles = 40): Promise<NewsDataArticle[]> => {
