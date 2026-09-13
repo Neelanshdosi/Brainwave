@@ -103,7 +103,8 @@ export async function GET(request: Request) {
       process.env.NEWSDATA_API_KEY || 
       process.env.NEXT_PUBLIC_NEWSDATA_API_KEY || 
       process.env.NEWSDATA_KEY || 
-      process.env.NEWS_DATA_API_KEY;
+      process.env.NEWS_DATA_API_KEY ||
+      process.env.NEWSAPI_KEY;
     
     if (!NEWSDATA_API_KEY) {
       const envKeys = Object.keys(process.env).filter(k => k.includes('NEWS') || k.includes('KEY') || k.includes('DATA')).join(', ');
