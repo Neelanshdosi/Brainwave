@@ -96,7 +96,7 @@ const parsePubDate = (pubDate: string): string => {
 
 export async function GET(request: Request) {
   try {
-    const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
+    const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY || process.env.NEWSDATA_KEY || process.env.NEWS_DATA_API_KEY;
     
     if (!NEWSDATA_API_KEY) {
       throw new Error('NewsData.io API key not configured (NEWSDATA_API_KEY)');
