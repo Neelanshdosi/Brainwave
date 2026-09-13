@@ -9,10 +9,6 @@ export interface Topic {
   timestamp: Date | string;
   position: [number, number, number];
   url?: string;
-  redditData?: {
-    score: number;
-    comments: number;
-  };
 }
 
 export interface NeuronData {

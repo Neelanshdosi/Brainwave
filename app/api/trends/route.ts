@@ -1,23 +1,22 @@
 import { NextResponse } from 'next/server';
 
-interface NewsArticle {
-  source: {
-    id: string | null;
-    name: string;
-  };
-  author: string | null;
+interface NewsDataArticle {
+  article_id: string;
   title: string;
-  description: string;
-  url: string;
-  urlToImage: string | null;
-  publishedAt: string;
-  content: string;
+  link: string;
+  description: string | null;
+  pubDate: string;
+  image_url: string | null;
+  source_id: string;
+  source_name?: string;
+  category: string[];
+  country: string[];
 }
 
-interface NewsAPIResponse {
+interface NewsDataResponse {
   status: string;
   totalResults: number;
-  articles: NewsArticle[];
+  results: NewsDataArticle[];
 }
 
 const CATEGORY_KEYWORDS = {
@@ -74,7 +73,7 @@ const categorizeArticle = (title: string, description: string): 'tech' | 'politi
 
 const extractKeyTopic = (title: string): string => {
   let cleaned = title
-    .replace(/\s*-\s*[^-]+$/, '') // Remove " - Source Name" at end
+    .replace(/\s*-\s*[^-]+$/, '') // Remove " - Source Name" at end if present
     .trim();
   
   if (cleaned.length > 60) {
@@ -84,83 +83,78 @@ const extractKeyTopic = (title: string): string => {
   return cleaned;
 };
 
+const parsePubDate = (pubDate: string): string => {
+  if (!pubDate) return new Date().toISOString();
+  try {
+    const formatted = pubDate.includes('T') ? pubDate : pubDate.replace(' ', 'T') + 'Z';
+    const date = new Date(formatted);
+    return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+};
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    // Region parameter ignored; always use global headlines
+    const NEWSDATA_API_KEY = process.env.NEWSDATA_API_KEY;
     
-    const NEWSAPI_KEY = process.env.NEWSAPI_KEY;
-    
-    if (!NEWSAPI_KEY) {
-      throw new Error('NewsAPI key not configured');
+    if (!NEWSDATA_API_KEY) {
+      throw new Error('NewsData.io API key not configured (NEWSDATA_API_KEY)');
     }
 
-    console.log('📰 Fetching global news');
-
-    // Country-based selection removed; global only
-
-    // Helper to try multiple URLs in order
-    const tryFetch = async (urls: string[]): Promise<NewsAPIResponse | null> => {
+    const tryFetch = async (urls: string[]): Promise<NewsDataResponse | null> => {
       for (const attemptUrl of urls) {
         try {
-          console.log('📡 Fetching from NewsAPI URL:', attemptUrl.replace(NEWSAPI_KEY, '***'));
           const res = await fetch(attemptUrl, { cache: 'no-store' });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({} as any));
-            console.warn('⚠️ Attempt failed:', res.status, err?.message);
             continue;
           }
-          const json: NewsAPIResponse = await res.json();
-          if (json?.articles && json.articles.length > 0) {
+          const json: NewsDataResponse = await res.json();
+          if (json?.results && json.results.length > 0) {
             return json;
           }
-          console.warn('⚠️ Attempt returned 0 articles');
-        } catch (e) {
-          console.warn('⚠️ Attempt error:', e);
+        } catch {
+          // Ignore individual attempt failure and proceed to next URL
         }
       }
       return null;
     };
 
-    // Build ordered attempts
     const attempts: string[] = [
-      `https://newsapi.org/v2/top-headlines?category=general&language=en&pageSize=40&apiKey=${NEWSAPI_KEY}`,
+      `https://newsdata.io/api/1/latest?apikey=${NEWSDATA_API_KEY}&language=en&category=top`,
+      `https://newsdata.io/api/1/latest?apikey=${NEWSDATA_API_KEY}&language=en`,
     ];
 
     const data = await tryFetch(attempts);
     if (!data) {
-      throw new Error('Failed to fetch headlines after multiple attempts');
+      throw new Error('Failed to fetch headlines from NewsData.io after multiple attempts');
     }
-    console.log('✅ Received articles:', data.articles.length);
     
-    // Process articles into topics
-    const topics = data.articles
-      .filter(article => article.title && article.title !== '[Removed]')
+    const topics = data.results
+      .filter(article => {
+        if (!article.title) return false;
+        if (article.description === null && article.title.length < 10) return false;
+        return true;
+      })
       .slice(0, 40)
-      .map((article, index) => {
-        // Calculate intensity based on recency (newer = higher intensity)
-        const publishedTime = new Date(article.publishedAt).getTime();
+      .map(article => {
+        const isoTimestamp = parsePubDate(article.pubDate);
+        const publishedTime = new Date(isoTimestamp).getTime();
         const now = Date.now();
-        const hoursSince = (now - publishedTime) / (1000 * 60 * 60);
+        const hoursSince = Math.max(0, (now - publishedTime) / (1000 * 60 * 60));
         const intensity = Math.max(0.3, Math.min(1, 1 - (hoursSince / 24)));
         
         return {
-          id: `news-${index}`,
+          id: article.article_id,
           name: extractKeyTopic(article.title),
           category: categorizeArticle(article.title, article.description || ''),
           intensity: intensity,
           summary: article.description || article.title,
-          source: article.source.name,
-          timestamp: article.publishedAt,
-          url: article.url,
-          redditData: {
-            score: Math.floor(intensity * 10000),
-            comments: Math.floor(Math.random() * 500),
-          },
+          source: article.source_name || article.source_id || 'Unknown Source',
+          timestamp: isoTimestamp,
+          url: article.link,
         };
       });
-
-    console.log('✅ Processed topics:', topics.length);
 
     return NextResponse.json(
       { topics, updatedAt: new Date().toISOString() },
@@ -172,7 +166,7 @@ export async function GET(request: Request) {
     );
     
   } catch (error) {
-    console.error('❌ Error in trends API:', error);
+    console.error('Error in trends API:', error);
     return NextResponse.json(
       { 
         error: error instanceof Error ? error.message : 'Failed to fetch trending topics',
