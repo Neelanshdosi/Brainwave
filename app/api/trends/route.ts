@@ -17,6 +17,7 @@ interface NewsDataResponse {
   status: string;
   totalResults: number;
   results: NewsDataArticle[];
+  nextPage?: string | null;
 }
 
 const CATEGORY_KEYWORDS = {
@@ -106,22 +107,33 @@ export async function GET(request: Request) {
       throw new Error('NewsData.io API key not configured (NEWSDATA_API_KEY)');
     }
 
-    const tryFetch = async (urls: string[]): Promise<NewsDataResponse | null> => {
-      for (const attemptUrl of urls) {
+    const fetchArticles = async (baseUrl: string, maxArticles = 40): Promise<NewsDataArticle[]> => {
+      let articles: NewsDataArticle[] = [];
+      let currentUrl: string | null = baseUrl;
+      let pagesFetched = 0;
+      const maxPages = 4; // Up to 4 pages (10 articles per page = 40 max)
+
+      while (currentUrl && articles.length < maxArticles && pagesFetched < maxPages) {
         try {
-          const res = await fetch(attemptUrl, { cache: 'no-store' });
-          if (!res.ok) {
-            continue;
-          }
+          const res = await fetch(currentUrl, { cache: 'no-store' });
+          if (!res.ok) break;
           const json: NewsDataResponse = await res.json();
           if (json?.results && json.results.length > 0) {
-            return json;
+            articles = articles.concat(json.results);
+            pagesFetched++;
+            if (json.nextPage && articles.length < maxArticles) {
+              currentUrl = `${baseUrl}&page=${json.nextPage}`;
+            } else {
+              currentUrl = null;
+            }
+          } else {
+            break;
           }
         } catch {
-          // Ignore individual attempt failure and proceed to next URL
+          break;
         }
       }
-      return null;
+      return articles;
     };
 
     const attempts: string[] = [
@@ -129,12 +141,17 @@ export async function GET(request: Request) {
       `https://newsdata.io/api/1/latest?apikey=${NEWSDATA_API_KEY}&language=en`,
     ];
 
-    const data = await tryFetch(attempts);
-    if (!data) {
+    let allArticles: NewsDataArticle[] = [];
+    for (const attemptUrl of attempts) {
+      allArticles = await fetchArticles(attemptUrl, 40);
+      if (allArticles.length > 0) break;
+    }
+
+    if (allArticles.length === 0) {
       throw new Error('Failed to fetch headlines from NewsData.io after multiple attempts');
     }
     
-    const topics = data.results
+    const topics = allArticles
       .filter(article => {
         if (!article.title) return false;
         if (article.description === null && article.title.length < 10) return false;
