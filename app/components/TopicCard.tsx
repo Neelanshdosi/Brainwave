@@ -36,9 +36,8 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
 
   useEffect(() => {
     console.log('🎯 TopicCard mounted for:', topic.name);
-    console.log('📊 Reddit data available:', !!topic.redditData);
 
-    if (!aiSummary && !loadingSummary && !summaryError && topic.redditData) {
+    if (!aiSummary && !loadingSummary && !summaryError) {
       console.log('🚀 Triggering AI summary fetch...');
       fetchAiSummary();
     } else {
@@ -46,7 +45,6 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
         hasAiSummary: !!aiSummary,
         isLoading: loadingSummary,
         hasError: !!summaryError,
-        hasRedditData: !!topic.redditData,
       });
     }
   }, []);
