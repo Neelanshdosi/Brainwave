@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 interface NewsDataArticle {
   article_id: string;
   title: string;
