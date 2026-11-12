@@ -62,9 +62,9 @@ export default function Neuron({
     targetPos.current.set(...position);
   }, [position]);
 
-  // Saturated HDR gold with low blue channel: new THREE.Color(3.2, 1.7, 0.25)
+  // Saturated HDR gold with low blue channel: new THREE.Color(2.8, 1.4, 0.2)
   // so it blooms as warm gold/amber without turning white-pink
-  const hdrGoldBase = useMemo(() => new THREE.Color(3.2, 1.7, 0.25), []);
+  const hdrGoldBase = useMemo(() => new THREE.Color(2.8, 1.4, 0.2), []);
 
   useFrame((state, delta) => {
     if (groupRef.current) {
@@ -109,7 +109,7 @@ export default function Neuron({
   const isUnread = !isRead && !isDimmed;
 
   // Fresnel rim shader hook for unread shells:
-  // Adds pow(1.0 - abs(dot(normal, viewDir)), 2.5) * categoryColor * 1.4 to emissive
+  // Adds pow(1.0 - abs(dot(normal, viewDir)), 2.5) * categoryColor * 1.1 to emissive (barely above threshold)
   const onBeforeCompileShell = useCallback((shader: THREE.WebGLProgramParametersWithUniforms) => {
     if (!isUnread) return;
     shader.uniforms.uRimColor = { value: threeCategoryColor };
@@ -124,7 +124,7 @@ export default function Neuron({
       #ifdef USE_NORMAL
         vec3 rimViewDir = normalize(vViewPosition);
         float rimFactor = pow(1.0 - abs(dot(vNormal, -rimViewDir)), 2.5);
-        gl_FragColor.rgb += uRimColor * (rimFactor * 1.4);
+        gl_FragColor.rgb += uRimColor * (rimFactor * 1.1);
       #endif
       `
     );
@@ -147,11 +147,11 @@ export default function Neuron({
         </Sphere>
       )}
 
-      {/* 2. INNER LIGHT (UNREAD only): saturated HDR gold (3.2, 1.7, 0.25) blooming as warm gold/amber */}
+      {/* 2. INNER LIGHT (UNREAD only): saturated HDR gold (2.8, 1.4, 0.2) blooming as warm gold/amber */}
       {isUnread && !isHighlighted && (
         <Sphere
           ref={innerLightRef}
-          args={[baseSize * 0.4, 20, 20]}
+          args={[baseSize * 0.5, 20, 20]}
           renderOrder={1}
         >
           <meshBasicMaterial

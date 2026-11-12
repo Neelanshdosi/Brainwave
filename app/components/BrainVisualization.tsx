@@ -227,10 +227,10 @@ export default function BrainVisualization() {
           <EffectComposer multisampling={0}>
             <Bloom
               mipmapBlur
-              luminanceThreshold={1}
-              luminanceSmoothing={0.35}
-              intensity={1.8}
-              radius={0.9}
+              luminanceThreshold={1.0}
+              luminanceSmoothing={0.15}
+              intensity={1.2}
+              radius={0.7}
             />
           </EffectComposer>
         </Suspense>
