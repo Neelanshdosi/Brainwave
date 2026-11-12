@@ -87,13 +87,23 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Generate grounded briefing
-    const briefing = await generateEventBriefing(targetEvent);
+    const result = await generateEventBriefing(targetEvent);
+
+    if ('status' in result && result.status === 'unavailable') {
+      return NextResponse.json({
+        status: 'unavailable',
+        reason: result.reason,
+      });
+    }
+
+    const briefingData = result as BriefingData;
 
     // 6. Cache for 30 minutes
-    briefingCache.set(eventId, briefing);
+    briefingCache.set(eventId, briefingData);
 
     return NextResponse.json({
-      briefing,
+      status: 'success',
+      briefing: briefingData,
       cached: false,
     });
   } catch (err) {

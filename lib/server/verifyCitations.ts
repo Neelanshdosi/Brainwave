@@ -47,6 +47,42 @@ export function normalizeForVerification(text: string): string {
 }
 
 /**
+ * Checks whether an event is eligible for briefing generation.
+ * An event is "briefable" ONLY if:
+ * 1. It has at least 2 distinct sources, OR
+ * 2. It has at least one article with fetchable body text of 500+ characters.
+ */
+export function isEventBriefable(event: {
+  articles?: Array<{ source?: string; body?: string; description?: string; url?: string }>;
+}): { briefable: boolean; reason?: string } {
+  if (!event || !event.articles || event.articles.length === 0) {
+    return { briefable: false, reason: 'Single source, no full text available' };
+  }
+
+  const distinctSources = new Set(
+    event.articles
+      .map((a) => (a.source || '').trim().toLowerCase())
+      .filter((s) => s.length > 0)
+  );
+
+  if (distinctSources.size >= 2) {
+    return { briefable: true };
+  }
+
+  // Single source: check if at least one article has body text of 500+ characters
+  const hasSubstantialBody = event.articles.some((a) => {
+    const bodyLen = (a.body || '').trim().length;
+    return bodyLen >= 500;
+  });
+
+  if (hasSubstantialBody) {
+    return { briefable: true };
+  }
+
+  return { briefable: false, reason: 'Single source, no full text available' };
+}
+
+/**
  * Pure function: Verifies claims strictly against article BODY text.
  *
  * Rules:

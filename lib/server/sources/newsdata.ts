@@ -45,8 +45,19 @@ export async function fetchNewsData(): Promise<RawItem[]> {
       return [];
     }
 
+    const now = Date.now();
+    const maxAgeMs = 24 * 60 * 60 * 1000;
+
     return json.results
-      .filter((art) => art.title && art.title.length > 5)
+      .filter((art) => {
+        if (!art.title || art.title.length <= 5) return false;
+        try {
+          const d = new Date(art.pubDate);
+          return !isNaN(d.getTime()) && now - d.getTime() <= maxAgeMs;
+        } catch {
+          return true;
+        }
+      })
       .map((art) => {
         let publishedAt: string;
         try {

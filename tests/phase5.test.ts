@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { verifyClaims, normalizeForVerification, Claim } from '../lib/server/verifyCitations';
+import { verifyClaims, normalizeForVerification, isEventBriefable, Claim } from '../lib/server/verifyCitations';
 import { isPrivateOrLocalUrl, extractArticleBody, cleanArticleHtml } from '../lib/server/briefingAgent';
 import { cleanText, decodeHtmlEntities } from '../lib/server/cleanText';
 
@@ -336,5 +336,81 @@ describe('Phase 5: Agent SSRF, Semantic Extraction, and Content Guards', () => {
     const longHtml = `<article><p>${'A'.repeat(12000)}</p></article>`;
     const extracted = extractArticleBody(longHtml);
     expect(extracted.length).toBeLessThanOrEqual(8192);
+  });
+});
+
+describe('Phase 5: Briefable Event Gating & Unavailable Error Handling', () => {
+  it('allows briefing when event has at least 2 distinct sources', () => {
+    const multiSourceEvent = {
+      articles: [
+        { source: 'The Guardian', url: 'https://theguardian.com/1' },
+        { source: 'BBC News', url: 'https://bbc.com/1' },
+      ],
+    };
+
+    const result = isEventBriefable(multiSourceEvent);
+    expect(result.briefable).toBe(true);
+  });
+
+  it('allows briefing for a single-source event if at least one article has body text of 500+ characters', () => {
+    const singleSourceWithLongBody = {
+      articles: [
+        {
+          source: 'Hacker News',
+          body: 'A'.repeat(520), // 520 chars >= 500 chars
+          url: 'https://news.ycombinator.com/item?id=123',
+        },
+      ],
+    };
+
+    const result = isEventBriefable(singleSourceWithLongBody);
+    expect(result.briefable).toBe(true);
+  });
+
+  it('rejects briefing for a single-source event without 500+ characters body text', () => {
+    const singleSourceShort = {
+      articles: [
+        {
+          source: 'Hacker News',
+          body: 'Short Ask HN question text',
+          description: 'Short Ask HN question text',
+          url: 'https://news.ycombinator.com/item?id=123',
+        },
+      ],
+    };
+
+    const result = isEventBriefable(singleSourceShort);
+    expect(result.briefable).toBe(false);
+    expect(result.reason).toBe('Single source, no full text available');
+  });
+
+  it('returns explicit { status: "unavailable", reason } when API key is missing without fabricating content', async () => {
+    const prevKey = process.env.GEMINI_API_KEY;
+    try {
+      delete process.env.GEMINI_API_KEY;
+
+      const mockEvent: any = {
+        id: 'evt-test',
+        title: 'Multi-Source Event for Testing',
+        category: 'tech',
+        articles: [
+          { source: 'Source 1', url: 'https://s1.com', title: 'T1' },
+          { source: 'Source 2', url: 'https://s2.com', title: 'T2' },
+        ],
+      };
+
+      const { generateEventBriefing } = await import('../lib/server/briefingAgent');
+      const response = await generateEventBriefing(mockEvent);
+
+      expect('status' in response).toBe(true);
+      if ('status' in response) {
+        expect(response.status).toBe('unavailable');
+        expect(response.reason).toContain('GEMINI_API_KEY');
+      }
+    } finally {
+      if (prevKey) {
+        process.env.GEMINI_API_KEY = prevKey;
+      }
+    }
   });
 });

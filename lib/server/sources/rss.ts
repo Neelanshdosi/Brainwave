@@ -41,7 +41,11 @@ function extractLink(xmlChunk: string): string {
 /**
  * Dependency-free RSS 2.0 and Atom parser.
  */
-export function parseFeedXml(xml: string, sourceName: string): RawItem[] {
+export function parseFeedXml(
+  xml: string,
+  sourceName: string,
+  maxAgeMs: number = 24 * 60 * 60 * 1000
+): RawItem[] {
   const items: RawItem[] = [];
 
   // Match all <item>...</item> (RSS) or <entry>...</entry> (Atom) blocks
@@ -81,6 +85,12 @@ export function parseFeedXml(xml: string, sourceName: string): RawItem[] {
       } catch {
         // fallback
       }
+    }
+
+    // 24-hour max age filter (if maxAgeMs is specified)
+    const itemTimeMs = new Date(publishedAt).getTime();
+    if (maxAgeMs > 0 && !isNaN(itemTimeMs) && Date.now() - itemTimeMs > maxAgeMs) {
+      continue;
     }
 
     const id = `rss-${hashString(link).toString(16)}`;

@@ -79,12 +79,17 @@ export async function fetchAllSources(maxItems: number = 150): Promise<RawItem[]
     }
   });
 
-  // Deduplicate by normalized URL
+  // Deduplicate by normalized URL & enforce max 24h age filter
   const seenUrls = new Set<string>();
   const deduped: RawItem[] = [];
+  const maxAgeMs = 24 * 60 * 60 * 1000;
+  const now = Date.now();
 
   for (const item of rawList) {
     if (!item.url || !item.title) continue;
+    const pubTime = new Date(item.publishedAt).getTime();
+    if (!isNaN(pubTime) && now - pubTime > maxAgeMs) continue;
+
     const norm = normalizeUrl(item.url);
     if (seenUrls.has(norm)) continue;
     seenUrls.add(norm);

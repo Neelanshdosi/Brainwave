@@ -3,7 +3,7 @@
 import { Topic } from '@/types/topic';
 import { X, ExternalLink, Sparkles, CheckCircle2, AlertCircle, FileText, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
-import { BriefingData } from '@/lib/server/verifyCitations';
+import { BriefingData, isEventBriefable, normalizeForVerification } from '@/lib/server/verifyCitations';
 
 interface TopicCardProps {
   topic: Topic;
@@ -35,8 +35,13 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
 
   const color = getCategoryColor(topic.category);
 
+  // Gate the briefing feature: requires >= 2 distinct sources OR >= 500 chars body text
+  const { briefable, reason: unbriefableReason } = isEventBriefable(topic);
+
   // Manual trigger for event briefing (to save quota)
   const handleGenerateBriefing = async () => {
+    if (!briefable) return;
+
     setLoadingBriefing(true);
     setBriefingError(null);
 
@@ -50,23 +55,41 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
         }),
       });
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (!res.ok || data.status === 'unavailable') {
+        const reason = data.reason || data.error || `HTTP ${res.status}`;
+        setBriefingError(reason);
+        setBriefing(null);
+        return;
       }
 
-      const data = await res.json();
       if (data.briefing) {
         setBriefing(data.briefing);
+        setBriefingError(null);
       } else {
         throw new Error('Invalid response structure');
       }
     } catch (err) {
       setBriefingError(err instanceof Error ? err.message : 'Failed to generate briefing');
+      setBriefing(null);
     } finally {
       setLoadingBriefing(false);
     }
   };
+
+  // Check if summary is identical to title to prevent duplicate display
+  const titleText = topic.name || topic.title || '';
+  const isSummaryDuplicateOfTitle =
+    !topic.summary ||
+    normalizeForVerification(topic.summary) === normalizeForVerification(titleText);
+
+  // Check if trend is unrated (<3 items or <2 sources)
+  const isTrendUnrated =
+    !topic.trend ||
+    topic.trend.velocity === 'unrated' ||
+    topic.trend.isUnrated ||
+    topic.trend.label === 'unrated';
 
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 p-4">
@@ -90,14 +113,16 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
           </span>
           {topic.trend && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-900/40 text-purple-300 border border-purple-700/50">
-              {topic.trend.label} • {Math.round(topic.trend.finalScore * 100)}% Momentum
+              {isTrendUnrated
+                ? 'Not enough data'
+                : `${topic.trend.label} • ${Math.round(topic.trend.finalScore * 100)}% Momentum`}
             </span>
           )}
         </div>
 
         {/* Title */}
         <h2 className="text-xl md:text-2xl font-bold mb-1 leading-snug" style={{ color }}>
-          {topic.name || topic.title}
+          {titleText}
         </h2>
 
         {/* Metadata */}
@@ -113,10 +138,12 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
           )}
         </div>
 
-        {/* Summary */}
-        <p className="text-gray-300 text-sm leading-relaxed mb-5 bg-neutral-900/60 p-3.5 rounded-xl border border-neutral-800">
-          {topic.summary}
-        </p>
+        {/* Summary (rendered only when distinct from title) */}
+        {!isSummaryDuplicateOfTitle && (
+          <p className="text-gray-300 text-sm leading-relaxed mb-5 bg-neutral-900/60 p-3.5 rounded-xl border border-neutral-800">
+            {topic.summary}
+          </p>
+        )}
 
         {/* Grounded Briefing Section */}
         <div className="border-t border-neutral-800 pt-4 mb-4">
@@ -126,12 +153,27 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
             </h3>
 
             {!briefing && !loadingBriefing && (
-              <button
-                onClick={handleGenerateBriefing}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-medium rounded-lg transition-all shadow-md hover:shadow-purple-500/20"
-              >
-                <Sparkles size={13} /> Generate Briefing
-              </button>
+              briefable ? (
+                <button
+                  onClick={handleGenerateBriefing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-medium rounded-lg transition-all shadow-md hover:shadow-purple-500/20"
+                >
+                  <Sparkles size={13} /> Generate Briefing
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-neutral-800/80 text-gray-500 text-xs font-medium rounded-lg cursor-not-allowed border border-neutral-700/60"
+                    title={unbriefableReason}
+                  >
+                    <Sparkles size={13} className="text-gray-600" /> Generate Briefing
+                  </button>
+                  <span className="text-[11px] text-gray-400 italic">
+                    {unbriefableReason || 'Single source, no full text available'}
+                  </span>
+                </div>
+              )
             )}
           </div>
 
@@ -143,9 +185,13 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
           )}
 
           {briefingError && (
-            <div className="flex items-center gap-2 p-3 bg-red-950/40 border border-red-800/60 rounded-xl text-red-300 text-xs">
-              <AlertCircle size={15} />
-              {briefingError}
+            <div className="flex items-center gap-2 p-3.5 bg-neutral-900/90 border border-amber-800/60 rounded-xl text-amber-300 text-xs">
+              <AlertCircle size={15} className="shrink-0 text-amber-400" />
+              <span>
+                {briefingError.startsWith('Briefing unavailable:')
+                  ? briefingError
+                  : `Briefing unavailable: ${briefingError}`}
+              </span>
             </div>
           )}
 

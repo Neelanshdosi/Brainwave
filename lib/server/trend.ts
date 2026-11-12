@@ -1,15 +1,17 @@
 import { RawItem } from './sources/types';
 
-export type TrendLabel = 'emerging' | 'rising' | 'steady' | 'fading';
+export type TrendLabel = 'emerging' | 'rising' | 'steady' | 'fading' | 'unrated';
+export type VelocityValue = number | 'unrated';
 
 export interface TrendScore {
   finalScore: number; // 0 to 1
   label: TrendLabel;
-  velocity: number; // 0 to 1
+  velocity: VelocityValue;
   diversity: number; // 0 to 1
   engagement: number; // 0 to 1
   sourceCount: number;
   itemCount: number;
+  isUnrated?: boolean;
 }
 
 export const TREND_WEIGHTS = {
@@ -22,6 +24,8 @@ export interface TimeWindow {
   start: number;
   end: number;
 }
+
+export const MAX_ITEM_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
  * Computes velocity: proportion of items in the newest third of the time window
@@ -101,40 +105,78 @@ export function computeEngagement(items: RawItem[]): number {
 
 /**
  * Pure function: Scores a group of items and produces a 0-1 trend score and label.
+ *
+ * Rules:
+ * 1. Max age filter: 24 hours for all sources.
+ * 2. Velocity must be "unrated" when an event has fewer than 3 items OR fewer than 2 distinct sources.
+ * 3. The "emerging" label strictly requires at least 2 distinct sources AND newest item under 6 hours old.
  */
 export function scoreTrend(
   items: RawItem[],
   window?: TimeWindow
 ): TrendScore {
-  if (!items || items.length === 0) {
+  const currentTime = window ? window.end : Date.now();
+
+  // 1. Max age filter of 24 hours
+  const validItems = (items || []).filter((item) => {
+    const t = new Date(item.publishedAt).getTime();
+    return !isNaN(t) && (currentTime - t) <= MAX_ITEM_AGE_MS;
+  });
+
+  if (validItems.length === 0) {
     return {
       finalScore: 0,
-      label: 'fading',
-      velocity: 0,
+      label: 'unrated',
+      velocity: 'unrated',
       diversity: 0,
       engagement: 0,
       sourceCount: 0,
       itemCount: 0,
+      isUnrated: true,
     };
   }
 
-  const velocity = computeVelocity(items, window);
-  const { diversity, count: sourceCount } = computeSourceDiversity(items);
-  const engagement = computeEngagement(items);
+  const { diversity, count: sourceCount } = computeSourceDiversity(validItems);
+  const engagement = computeEngagement(validItems);
+
+  // 2. Velocity must be "unrated" when an event has fewer than 3 items OR fewer than 2 distinct sources
+  const isUnrated = validItems.length < 3 || sourceCount < 2;
+
+  if (isUnrated) {
+    return {
+      finalScore: 0,
+      label: 'unrated',
+      velocity: 'unrated',
+      diversity,
+      engagement,
+      sourceCount,
+      itemCount: validItems.length,
+      isUnrated: true,
+    };
+  }
+
+  // Rated velocity (>= 3 items and >= 2 distinct sources)
+  const numericVelocity = computeVelocity(validItems, window);
 
   const rawScore =
-    velocity * TREND_WEIGHTS.velocity +
+    numericVelocity * TREND_WEIGHTS.velocity +
     diversity * TREND_WEIGHTS.diversity +
     engagement * TREND_WEIGHTS.engagement;
 
   const finalScore = Number(Math.max(0, Math.min(1, rawScore)).toFixed(4));
 
+  // 3. "emerging" requires at least 2 distinct sources AND newest item under 6 hours old
+  const timestamps = validItems.map((i) => new Date(i.publishedAt).getTime());
+  const newestTime = Math.max(...timestamps);
+  const newestAgeMs = currentTime - newestTime;
+  const isNewestUnder6h = newestAgeMs < 6 * 3600 * 1000;
+
   let label: TrendLabel;
-  if (velocity >= 0.75 && items.length <= 6) {
+  if (numericVelocity >= 0.75 && validItems.length <= 6 && sourceCount >= 2 && isNewestUnder6h) {
     label = 'emerging';
-  } else if (finalScore >= 0.58 || (velocity >= 0.6 && diversity >= 0.33)) {
+  } else if (finalScore >= 0.58 || (numericVelocity >= 0.6 && diversity >= 0.33)) {
     label = 'rising';
-  } else if (finalScore >= 0.32 && velocity >= 0.25) {
+  } else if (finalScore >= 0.32 && numericVelocity >= 0.25) {
     label = 'steady';
   } else {
     label = 'fading';
@@ -143,11 +185,11 @@ export function scoreTrend(
   return {
     finalScore,
     label,
-    velocity,
+    velocity: numericVelocity,
     diversity,
     engagement,
     sourceCount,
-    itemCount: items.length,
+    itemCount: validItems.length,
+    isUnrated: false,
   };
 }
-

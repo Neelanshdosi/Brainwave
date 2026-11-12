@@ -35,8 +35,9 @@ export default function Neuron({
   const baseSize = 0.11 + trendScore * 0.05;
 
   // Pulse speed based on story velocity
-  const velocity = topic?.trend?.velocity ?? 0.5;
-  const pulseSpeed = 1.0 + velocity * 3.0;
+  const rawVelocity = topic?.trend?.velocity;
+  const numVelocity = typeof rawVelocity === 'number' ? rawVelocity : 0.5;
+  const pulseSpeed = 1.0 + numVelocity * 3.0;
 
   // True original category color (Red for politics, Cyan for tech, etc.)
   const categoryColor = topic ? CATEGORY_COLORS[topic.category] || '#a29bfe' : '#666666';

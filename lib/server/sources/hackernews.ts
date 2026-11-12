@@ -14,7 +14,9 @@ interface HnItem {
   type?: string;
 }
 
-export async function fetchHackerNews(limit: number = 30): Promise<RawItem[]> {
+const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export async function fetchHackerNews(limit: number = 35): Promise<RawItem[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6000);
 
@@ -53,22 +55,39 @@ export async function fetchHackerNews(limit: number = 30): Promise<RawItem[]> {
     clearTimeout(timeoutId);
 
     const validItems: RawItem[] = [];
+    const now = Date.now();
 
     for (const item of items) {
       if (!item || !item.title) continue;
+
+      const itemTimeMs = item.time ? item.time * 1000 : now;
+      // 24-hour max age filter
+      if (now - itemTimeMs > MAX_AGE_MS) {
+        continue;
+      }
+
       const points = item.score || 0;
       const comments = item.descendants || 0;
       const engagement = points + comments;
 
-      const publishedAt = item.time
-        ? new Date(item.time * 1000).toISOString()
-        : new Date().toISOString();
+      const publishedAt = new Date(itemTimeMs).toISOString();
+
+      const cleanedTitle = cleanText(item.title);
+      const cleanedBody = item.text ? cleanText(item.text) : '';
+
+      // For Ask HN / Show HN / self posts, use item's own cleaned text as article body.
+      // For link posts, use item's url as primary article URL so fetch_article can fetch linked page.
+      const hasExternalLink = Boolean(item.url && item.url.startsWith('http'));
+      const articleUrl = hasExternalLink
+        ? item.url!
+        : `https://news.ycombinator.com/item?id=${item.id}`;
 
       validItems.push({
         id: `hn-${item.id}`,
-        title: cleanText(item.title),
-        description: cleanText(item.text || item.title),
-        url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
+        title: cleanedTitle,
+        description: cleanedBody.length > 0 ? cleanedBody : cleanedTitle,
+        body: cleanedBody.length > 0 ? cleanedBody : undefined,
+        url: articleUrl,
         source: 'Hacker News',
         sourceType: 'hackernews',
         publishedAt,
@@ -84,4 +103,3 @@ export async function fetchHackerNews(limit: number = 30): Promise<RawItem[]> {
     clearTimeout(timeoutId);
   }
 }
-

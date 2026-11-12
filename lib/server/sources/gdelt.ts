@@ -71,8 +71,15 @@ export async function fetchGdelt(): Promise<RawItem[]> {
       return [];
     }
 
+    const now = Date.now();
+    const maxAgeMs = 24 * 60 * 60 * 1000;
+
     return json.articles
-      .filter((art) => art.title && art.title.length > 5 && art.url)
+      .filter((art) => {
+        if (!art.title || art.title.length <= 5 || !art.url) return false;
+        const pubTime = new Date(parseGdeltDate(art.seendate)).getTime();
+        return !isNaN(pubTime) && now - pubTime <= maxAgeMs;
+      })
       .map((art) => {
         const id = `gdelt-${hashString(art.url).toString(16)}`;
         const cleanedTitle = cleanText(art.title);

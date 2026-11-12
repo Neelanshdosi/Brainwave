@@ -86,7 +86,12 @@ export default function BrainVisualization() {
             <span className="text-xs uppercase font-bold text-purple-400">{hoveredTopic.category}</span>
             {hoveredTopic.trend && (
               <span className="text-[11px] text-gray-400">
-                • {hoveredTopic.trend.label} ({Math.round(hoveredTopic.trend.finalScore * 100)}%)
+                •{' '}
+                {hoveredTopic.trend.velocity === 'unrated' ||
+                hoveredTopic.trend.isUnrated ||
+                hoveredTopic.trend.label === 'unrated'
+                  ? 'Not enough data'
+                  : `${hoveredTopic.trend.label} (${Math.round(hoveredTopic.trend.finalScore * 100)}%)`}
               </span>
             )}
           </div>
