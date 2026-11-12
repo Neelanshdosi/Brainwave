@@ -2,6 +2,7 @@
 
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Stars, ContactShadows } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import { Suspense, useState, useMemo } from 'react';
 import Neuron from './NeuronCluster';
 import TopicCard from './TopicCard';
@@ -164,8 +165,9 @@ export default function BrainVisualization() {
       <Canvas
         shadows
         camera={{ position: [0, 0, 8], fov: 50 }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true }}
       >
+        <color attach="background" args={['#000000']} />
         <Suspense fallback={null}>
           <ambientLight intensity={0.25} />
           <directionalLight
@@ -221,6 +223,16 @@ export default function BrainVisualization() {
             resolution={1024}
             frames={1}
           />
+
+          <EffectComposer multisampling={0}>
+            <Bloom
+              mipmapBlur
+              luminanceThreshold={1}
+              luminanceSmoothing={0.2}
+              intensity={1.4}
+              radius={0.75}
+            />
+          </EffectComposer>
         </Suspense>
       </Canvas>
 
