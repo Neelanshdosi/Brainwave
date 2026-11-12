@@ -1,6 +1,7 @@
 import { RawItem } from './types';
 import { logger } from '../logger';
 import { hashString } from '../../neuronPosition';
+import { cleanText } from '../cleanText';
 
 interface GdeltArticle {
   url: string;
@@ -74,10 +75,11 @@ export async function fetchGdelt(): Promise<RawItem[]> {
       .filter((art) => art.title && art.title.length > 5 && art.url)
       .map((art) => {
         const id = `gdelt-${hashString(art.url).toString(16)}`;
+        const cleanedTitle = cleanText(art.title);
         return {
           id,
-          title: art.title.trim(),
-          description: art.title.trim(),
+          title: cleanedTitle,
+          description: cleanedTitle,
           url: art.url,
           source: art.domain || 'GDELT',
           sourceType: 'gdelt',

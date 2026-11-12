@@ -1,5 +1,6 @@
 import { RawItem } from './types';
 import { logger } from '../logger';
+import { cleanText } from '../cleanText';
 
 interface NewsDataArticle {
   article_id: string;
@@ -57,8 +58,8 @@ export async function fetchNewsData(): Promise<RawItem[]> {
 
         return {
           id: `nd-${art.article_id || Math.random().toString(36).substring(2)}`,
-          title: art.title.trim(),
-          description: (art.description || art.title).trim(),
+          title: cleanText(art.title),
+          description: cleanText(art.description || art.title),
           url: art.link,
           source: art.source_name || art.source_id || 'NewsData',
           sourceType: 'newsdata',

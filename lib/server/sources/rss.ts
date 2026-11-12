@@ -1,6 +1,7 @@
 import { RawItem } from './types';
 import { logger } from '../logger';
 import { hashString } from '../../neuronPosition';
+import { cleanText } from '../cleanText';
 
 interface FeedConfig {
   name: string;
@@ -12,28 +13,6 @@ const FEEDS: FeedConfig[] = [
   { name: 'The Guardian', url: 'https://www.theguardian.com/world/rss' },
   { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
 ];
-
-function decodeHtmlEntities(str: string): string {
-  return str
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
-}
-
-function cleanText(raw: string = ''): string {
-  // Strip CDATA
-  let text = raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, '$1');
-  // Strip HTML tags
-  text = text.replace(/<[^>]+>/g, ' ');
-  // Decode entities
-  text = decodeHtmlEntities(text);
-  // Normalize whitespace
-  return text.replace(/\s+/g, ' ').trim();
-}
 
 function extractTagContent(xmlChunk: string, tagName: string): string {
   const cdataRegex = new RegExp(`<${tagName}[^>]*>\\s*<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>\\s*<\\/${tagName}>`, 'i');

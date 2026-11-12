@@ -1,5 +1,6 @@
 import { RawItem } from './types';
 import { logger } from '../logger';
+import { cleanText } from '../cleanText';
 
 interface HnItem {
   id: number;
@@ -65,8 +66,8 @@ export async function fetchHackerNews(limit: number = 30): Promise<RawItem[]> {
 
       validItems.push({
         id: `hn-${item.id}`,
-        title: item.title.trim(),
-        description: item.text ? item.text.replace(/<[^>]+>/g, '').trim() : item.title.trim(),
+        title: cleanText(item.title),
+        description: cleanText(item.text || item.title),
         url: item.url || `https://news.ycombinator.com/item?id=${item.id}`,
         source: 'Hacker News',
         sourceType: 'hackernews',

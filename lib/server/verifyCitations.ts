@@ -3,10 +3,17 @@ export interface SourceCitation {
   quote: string;
 }
 
+export type ClaimVerificationStatus =
+  | 'verified'
+  | 'unverified'
+  | 'unverified: no full text';
+
 export interface Claim {
   text: string;
   sources: SourceCitation[];
   verified?: boolean;
+  status?: ClaimVerificationStatus;
+  rejectionReason?: string;
 }
 
 export interface BriefingData {
@@ -17,65 +24,144 @@ export interface BriefingData {
   claims: Claim[];
   caveats: string[];
   verified_ratio?: number;
+  checkable_claims?: number;
+  total_claims?: number;
+}
+
+export interface VerifyClaimsResult {
+  verifiedClaims: Claim[];
+  verifiedRatio: number;
+  checkableCount: number;
+  totalClaims: number;
+  verifiedCount: number;
 }
 
 export function normalizeForVerification(text: string): string {
+  if (!text) return '';
   return text
     .toLowerCase()
-    .replace(/[“”"']/g, '') // remove quote marks
+    .replace(/[“”"'‘’]/g, '') // remove quote marks
+    .replace(/[.,;:!?()[\]{}]/g, ' ') // normalize sentence & phrase punctuation
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 /**
- * Pure function: Verifies that every claim's quote actually appears in that article's text.
- * Checks articleIndex validity and quote matching with normalized whitespace and case.
+ * Pure function: Verifies claims strictly against article BODY text.
+ *
+ * Rules:
+ * 1. Quotes are verified ONLY against article BODY text (fetched content), never titles or snippets.
+ * 2. If no body text was fetched for a cited article, the claim is marked "unverified: no full text", verified: false.
+ * 3. A claim whose text equals its quote (after normalization) is rejected.
+ * 4. Quotes shorter than 40 characters are rejected.
+ * 5. verified_ratio is computed strictly over checkable claims (claims where full body was available).
  */
 export function verifyClaims(
   claims: Claim[],
-  articlesTextByIndex: Map<number, string>
-): { verifiedClaims: Claim[]; verifiedRatio: number } {
+  articleBodiesByIndex: Map<number, string>
+): VerifyClaimsResult {
   if (!claims || claims.length === 0) {
-    return { verifiedClaims: [], verifiedRatio: 0 };
+    return {
+      verifiedClaims: [],
+      verifiedRatio: 0,
+      checkableCount: 0,
+      totalClaims: 0,
+      verifiedCount: 0,
+    };
   }
 
   let verifiedCount = 0;
+  let checkableCount = 0;
 
-  const verifiedClaims = claims.map((claim) => {
+  const verifiedClaims: Claim[] = claims.map((claim) => {
     if (!claim.sources || !Array.isArray(claim.sources) || claim.sources.length === 0) {
-      return { ...claim, verified: false };
+      return {
+        ...claim,
+        verified: false,
+        status: 'unverified',
+        rejectionReason: 'No source citations provided',
+      };
     }
 
-    let allSourcesVerified = true;
+    // First check if any cited source is missing body text
+    let missingBody = false;
+    for (const src of claim.sources) {
+      const bodyText = articleBodiesByIndex.get(src.articleIndex);
+      if (!bodyText || bodyText.trim().length === 0) {
+        missingBody = true;
+        break;
+      }
+    }
+
+    if (missingBody) {
+      return {
+        ...claim,
+        verified: false,
+        status: 'unverified: no full text',
+        rejectionReason: 'No full body text fetched for cited article',
+      };
+    }
+
+    // All cited articles have body text, so this claim is checkable
+    checkableCount++;
+
+    const normClaim = normalizeForVerification(claim.text);
+    let allSourcesValid = true;
+    let failureReason: string | undefined;
 
     for (const src of claim.sources) {
-      const articleText = articlesTextByIndex.get(src.articleIndex);
-      if (!articleText || !src.quote || src.quote.trim().length === 0) {
-        allSourcesVerified = false;
+      const bodyText = articleBodiesByIndex.get(src.articleIndex)!;
+      const rawQuote = src.quote || '';
+      const normQuote = normalizeForVerification(rawQuote);
+
+      // Rejection rule 1: Quotes shorter than 40 characters
+      if (rawQuote.trim().length < 40 || normQuote.length < 40) {
+        allSourcesValid = false;
+        failureReason = 'Quote is shorter than 40 characters';
         break;
       }
 
-      const normQuote = normalizeForVerification(src.quote);
-      const normArticle = normalizeForVerification(articleText);
+      // Rejection rule 2: Claim text equals quote after normalization
+      if (normClaim === normQuote) {
+        allSourcesValid = false;
+        failureReason = 'Claim text is identical to citation quote';
+        break;
+      }
 
-      // Quote must be substantial and present in article text
-      if (normQuote.length < 5 || !normArticle.includes(normQuote)) {
-        allSourcesVerified = false;
+      // Rejection rule 3: Quote must appear verbatim in article body text
+      const normBody = normalizeForVerification(bodyText);
+      if (!normBody.includes(normQuote)) {
+        allSourcesValid = false;
+        failureReason = 'Quote does not appear in fetched article body text';
         break;
       }
     }
 
-    if (allSourcesVerified) {
+    if (allSourcesValid) {
       verifiedCount++;
+      return {
+        ...claim,
+        verified: true,
+        status: 'verified',
+      };
     }
 
     return {
       ...claim,
-      verified: allSourcesVerified,
+      verified: false,
+      status: 'unverified',
+      rejectionReason: failureReason,
     };
   });
 
-  const verifiedRatio = Number((verifiedCount / claims.length).toFixed(4));
-  return { verifiedClaims, verifiedRatio };
-}
+  const verifiedRatio =
+    checkableCount > 0 ? Number((verifiedCount / checkableCount).toFixed(4)) : 0;
 
+  return {
+    verifiedClaims,
+    verifiedRatio,
+    checkableCount,
+    totalClaims: claims.length,
+    verifiedCount,
+  };
+}

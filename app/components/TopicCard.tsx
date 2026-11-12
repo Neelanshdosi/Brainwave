@@ -152,18 +152,24 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
           {briefing && (
             <div className="space-y-4 bg-neutral-900/80 p-4 rounded-xl border border-neutral-800 text-xs">
               {/* Verification Ratio Header */}
-              {briefing.verified_ratio !== undefined && (
+              {briefing.claims && briefing.claims.length > 0 && (
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-800 text-xs">
                   <span className="text-gray-400 font-medium">Fact Verification Score</span>
-                  <span
-                    className={`font-semibold px-2 py-0.5 rounded text-xs ${
-                      briefing.verified_ratio >= 0.7
-                        ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800'
-                        : 'bg-amber-950/80 text-amber-400 border border-amber-800'
-                    }`}
-                  >
-                    {Math.round(briefing.verified_ratio * 100)}% Verified
-                  </span>
+                  {briefing.checkable_claims === 0 ? (
+                    <span className="font-semibold px-2 py-0.5 rounded text-xs bg-neutral-800 text-amber-400/90 border border-neutral-700">
+                      0 of {briefing.total_claims ?? briefing.claims.length} claims checkable
+                    </span>
+                  ) : (
+                    <span
+                      className={`font-semibold px-2 py-0.5 rounded text-xs ${
+                        (briefing.verified_ratio ?? 0) >= 0.7
+                          ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800'
+                          : 'bg-amber-950/80 text-amber-400 border border-amber-800'
+                      }`}
+                    >
+                      {Math.round((briefing.verified_ratio ?? 0) * 100)}% Verified
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -200,6 +206,10 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
                           {claim.verified ? (
                             <span className="shrink-0 flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
                               <CheckCircle2 size={11} /> Verified
+                            </span>
+                          ) : claim.status === 'unverified: no full text' ? (
+                            <span className="shrink-0 text-[10px] text-amber-400/90 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-900/50">
+                              No full text
                             </span>
                           ) : (
                             <span className="shrink-0 text-[10px] text-gray-500 bg-neutral-900 px-1.5 py-0.5 rounded">
