@@ -22,7 +22,7 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
       : topic.timestamp;
   const timeAgo = Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 60000));
 
-  const color = (topic && CATEGORY_COLORS[topic.category]) || CATEGORY_COLORS.other;
+  const color = (topic && (CATEGORY_COLORS as Record<string, string>)[topic.category]) || CATEGORY_COLORS.politics;
 
   // Gate the briefing feature: requires >= 2 distinct sources OR >= 500 chars body text
   const { briefable, reason: unbriefableReason } = isEventBriefable(topic);

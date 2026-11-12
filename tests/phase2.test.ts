@@ -52,6 +52,30 @@ describe('Phase 2: Word-Boundary Keyword Categorization', () => {
     expect(categorizeByKeywords('Presidential election results announced by parliament')).toBe('politics');
     expect(categorizeByKeywords('NASA discovers new planet in deep space')).toBe('science');
   });
+
+  it('assigns every event to one of the 6 real categories with no "other", even for gibberish or empty titles', () => {
+    const validCategories = ['tech', 'sports', 'politics', 'business', 'science', 'entertainment'];
+
+    // Empty title & description
+    const emptyResult = categorizeByKeywords('', '');
+    expect(validCategories).toContain(emptyResult);
+    expect(emptyResult).toBe('politics'); // default world news fallback
+
+    // Random gibberish
+    const gibberishResult = categorizeByKeywords('asdfghjkl qwertyuiop zxcvbnm', '1234567890 !@#$%^&*()');
+    expect(validCategories).toContain(gibberishResult);
+    expect(gibberishResult).toBe('politics');
+
+    // Business keywords
+    const businessResult = categorizeByKeywords('Federal Reserve raises interest rates to combat inflation', 'Wall Street stock market reacts');
+    expect(validCategories).toContain(businessResult);
+    expect(businessResult).toBe('business');
+
+    // Entertainment keywords
+    const entResult = categorizeByKeywords('New blockbuster movie premieres in Hollywood cinema', 'Pop star releases album on streaming');
+    expect(validCategories).toContain(entResult);
+    expect(entResult).toBe('entertainment');
+  });
 });
 
 describe('Phase 2: In-Memory LRU Cache', () => {

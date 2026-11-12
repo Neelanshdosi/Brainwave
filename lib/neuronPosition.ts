@@ -133,10 +133,10 @@ export const generateBrainNeurons = (
 };
 
 export const CATEGORY_COLORS = {
-  tech: '#00d4ff',
-  politics: '#ff4757',
-  entertainment: '#ffa502',
-  science: '#1e90ff',
-  sports: '#2ed573',
-  other: '#a29bfe',
-};
+  tech: '#3b82f6',
+  sports: '#ef4444',
+  politics: '#a855f7',
+  business: '#22c55e',
+  science: '#22d3ee',
+  entertainment: '#ec4899',
+} as const;

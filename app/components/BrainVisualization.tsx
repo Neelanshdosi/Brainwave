@@ -16,7 +16,7 @@ import AskTheBrain from './AskTheBrain';
 
 export default function BrainVisualization() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([
-    'tech', 'politics', 'entertainment', 'science', 'sports', 'other'
+    'tech', 'sports', 'politics', 'business', 'science', 'entertainment'
   ]);
   const [showConnections, setShowConnections] = useState(false);
   const [activeCitedEventIds, setActiveCitedEventIds] = useState<string[]>([]);

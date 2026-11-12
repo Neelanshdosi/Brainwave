@@ -21,12 +21,19 @@ export interface Event {
   similarEventIds?: string[];
 }
 
-export const CATEGORY_PROTOTYPES: Record<Exclude<CategoryType, 'other'>, string> = {
-  tech: 'Artificial intelligence machine learning software hardware computers algorithms programming tech startups crypto microchips smartphones cybersecurity',
-  politics: 'Government elections congress president senate parliament legislation voting democracy diplomacy foreign policy court supreme prime minister',
-  science: 'Science scientific research astronomy space exploration NASA physics chemistry biology clinical trial medicine climate environment genetics',
-  entertainment: 'Cinema movie film actor hollywood netflix streaming music album concert celebrity pop culture gaming videogame series television',
-  sports: 'Sports athletics football soccer basketball championship league tournament athlete soccer player goal grand slam tennis olympics',
+export const CATEGORY_PROTOTYPES: Record<CategoryType, string> = {
+  business:
+    'Financial markets, stock exchanges, interest rates, inflation, central banks, and macroeconomic policies. Corporate earnings, quarterly reports, mergers, acquisitions, venture capital, startups, IPOs, and corporate restructuring. International trade, tariffs, supply chains, commodity prices, banking, commerce, and employment labor statistics.',
+  science:
+    'Peer-reviewed scientific research, physics, quantum mechanics, astronomy, space exploration, NASA missions, and astrophysics discoveries. Medical breakthroughs, clinical trials, oncology, epidemiology, neuroscience, genetics, pharmaceuticals, immunology, and public health innovations. Climate science, environmental conservation, ecology, renewable energy, geology, meteorology, and atmospheric studies.',
+  politics:
+    'National governments, prime ministers, presidents, parliaments, congress, senate, legislation, constitutional law, and supreme court rulings. Elections, campaigns, voting, democracy, political parties, geopolitics, diplomacy, United Nations, treaties, and foreign relations. Armed conflicts, military defense, domestic policy, regulation, civil rights, immigration, national security, crime, and justice systems.',
+  tech:
+    'Artificial intelligence, machine learning, large language models, neural networks, algorithms, and robotics developments. Software engineering, cloud computing, cybersecurity, operating systems, mobile devices, and semiconductor microchips. Internet platforms, consumer electronics, open source software, developer tooling, virtual reality, and computing hardware.',
+  entertainment:
+    'Cinema, films, television series, Hollywood, streaming services, Netflix, box office, and movie festivals. Music industry, album releases, concerts, musicians, Grammy awards, celebrity news, pop culture, and entertainment media. Video games, gaming consoles, esports, graphic novels, publishing, theater, art, and cultural exhibitions.',
+  sports:
+    'Professional sports leagues, football, soccer, basketball, baseball, hockey, golf, motorsport, Formula 1, and athletics. Championship tournaments, World Cup, Olympic games, Premier League, NBA, Champions League, Super Bowl, and grand slam tennis. Athletes, transfers, player contracts, coaching, match results, scores, sports analytics, and Olympic competitions.',
 };
 
 export interface ClusterOptions {
@@ -136,10 +143,10 @@ export function clusterArticles(
     // Trend score using pure function
     const trend = scoreTrend(clusterItems, options.window);
 
-    // Zero-shot categorization against prototypes if prototype vectors provided
-    let category: CategoryType = 'other';
+    // Strict argmax zero-shot classification against category prototypes
+    let category: CategoryType = 'politics';
     if (options.categoryPrototypeEmbeddings) {
-      let highestCatSim = -1;
+      let highestCatSim = -Infinity;
       for (const [catName, protoVec] of Object.entries(options.categoryPrototypeEmbeddings)) {
         const sim = cosineSimilarity(centroid, protoVec);
         if (sim > highestCatSim) {
@@ -147,11 +154,8 @@ export function clusterArticles(
           category = catName as CategoryType;
         }
       }
-      if (highestCatSim < 0.15) {
-        category = 'other';
-      }
     } else {
-      // Fallback to keyword categorizer
+      // Fallback to keyword argmax
       category = categorizeByKeywords(title, summary);
     }
 

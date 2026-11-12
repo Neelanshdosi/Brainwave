@@ -1,11 +1,13 @@
 import { RawItem } from '@/lib/server/sources/types';
 import { TrendScore } from '@/lib/server/trend';
 
+export type Category = 'tech' | 'sports' | 'politics' | 'business' | 'science' | 'entertainment';
+
 export interface Topic {
   id: string;
   name: string;
   title?: string;
-  category: 'tech' | 'politics' | 'entertainment' | 'science' | 'sports' | 'other';
+  category: Category;
   intensity: number; // 0-1 scale (from trend.finalScore)
   trend?: TrendScore;
   summary: string;

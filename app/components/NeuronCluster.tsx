@@ -27,7 +27,8 @@ export default function Neuron({
   isRead = false,
 }: NeuronProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const coreMatRef = useRef<THREE.MeshStandardMaterial>(null);
+  const innerLightRef = useRef<THREE.Mesh>(null);
+  const innerMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const haloRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
@@ -37,16 +38,21 @@ export default function Neuron({
 
   // Category color from single source of truth
   const categoryColor = useMemo(() => {
-    if (!topic) return '#666666';
-    return (CATEGORY_COLORS as Record<string, string>)[topic.category] || CATEGORY_COLORS.other;
+    if (!topic) return '#3b82f6';
+    return (CATEGORY_COLORS as Record<string, string>)[topic.category] || CATEGORY_COLORS.politics;
   }, [topic?.category]);
 
-  // Warmed emissive for UNREAD state: blend 15% toward warm white/gold
-  const warmedEmissive = useMemo(() => {
-    const col = new THREE.Color(categoryColor);
-    const warmWhite = new THREE.Color('#fff4e0'); // subtle warm tint
-    return col.lerp(warmWhite, 0.15);
-  }, [categoryColor]);
+  // Phase offset per node derived deterministically from topic id or coordinates
+  const phaseOffset = useMemo(() => {
+    if (topic?.id) {
+      let hash = 0;
+      for (let i = 0; i < topic.id.length; i++) {
+        hash = (hash * 31 + topic.id.charCodeAt(i)) & 0xffffffff;
+      }
+      return (Math.abs(hash) % 1000) / 1000 * Math.PI * 2;
+    }
+    return (position[0] * 3.1 + position[1] * 7.3 + position[2] * 11.7) % (Math.PI * 2);
+  }, [topic?.id, position]);
 
   // Position lerping target
   const targetPos = useRef(new THREE.Vector3(...position));
@@ -54,24 +60,16 @@ export default function Neuron({
     targetPos.current.set(...position);
   }, [position]);
 
-  // Random phase offset based on position to avoid artificial sync across nodes
-  const phaseOffset = useMemo(
-    () => (position[0] * 3.1 + position[1] * 7.3 + position[2] * 11.7) % (Math.PI * 2),
-    [position]
-  );
-
   useFrame((state, delta) => {
     if (groupRef.current) {
       groupRef.current.position.lerp(targetPos.current, Math.min(1, delta * 5));
 
-      // Scale pulse
+      // Hover: scale 1.1x. Highlight: breathing pulse
       let targetScale = 1.0;
       if (hovered) {
-        targetScale = 1.1; // Hover: 1.1x scale
+        targetScale = 1.1;
       } else if (isHighlighted) {
-        // Gold highlight pulse for cited nodes
-        const pulse = Math.sin(state.clock.elapsedTime * 4.0) * 0.1;
-        targetScale = 1.0 + pulse;
+        targetScale = 1.0 + Math.sin(state.clock.elapsedTime * 4.0) * 0.1;
       }
       groupRef.current.scale.lerp(
         new THREE.Vector3(targetScale, targetScale, targetScale),
@@ -79,38 +77,32 @@ export default function Neuron({
       );
     }
 
-    // Dynamic emissive pulsing for unread nodes
-    if (coreMatRef.current) {
-      if (isHighlighted) {
-        coreMatRef.current.emissiveIntensity = hovered ? 3.0 : 2.5;
-      } else if (!isRead && !isDimmed) {
-        // UNREAD: emissive pulsing slowly between ~0.9 and ~1.4
-        const pulse = (Math.sin(state.clock.elapsedTime * 1.8 + phaseOffset) + 1) * 0.5; // [0, 1]
-        const baseIntensity = 0.9 + pulse * 0.5; // [0.9, 1.4]
-        coreMatRef.current.emissiveIntensity = baseIntensity + (hovered ? 0.3 : 0);
-      } else {
-        // READ or DIMMED: subtle emissive intensity (0.15 to 0.3)
-        const baseIntensity = isDimmed ? 0.08 : 0.22;
-        coreMatRef.current.emissiveIntensity = baseIntensity + (hovered ? 0.3 : 0);
-      }
+    // Gentle pulse of inner gold light (+/-10% scale and opacity over ~2.5s cycle)
+    if (innerLightRef.current && innerMatRef.current) {
+      const pulse = Math.sin(state.clock.elapsedTime * (Math.PI * 2 / 2.5) + phaseOffset);
+      const innerScale = 1.0 + pulse * 0.10;
+      innerLightRef.current.scale.setScalar(innerScale);
+
+      const targetOpacity = (hovered ? 1.0 : 0.95) + pulse * 0.04;
+      innerMatRef.current.opacity = Math.max(0.85, Math.min(1.0, targetOpacity));
     }
 
-    // Gold halo breathing when highlighted
+    // Gold halo breathing on cited nodes
     if (haloRef.current && isHighlighted) {
       const haloScale = 1.0 + Math.sin(state.clock.elapsedTime * 3.5) * 0.08;
       haloRef.current.scale.setScalar(haloScale);
     }
   });
 
-  // State definitions:
-  // 1. ASK-THE-BRAIN highlight: only state where gold appears
-  // 2. UNREAD: category color core with warmed emissive + outer transparent glow sphere in category color
-  // 3. READ: category color core with subtle emissive, NO glow sphere
+  // State calculations:
+  // UNREAD: translucent category glass shell (opacity 0.7, renderOrder 2) with inner gold sphere (renderOrder 1)
+  // READ: solid category shell (opacity 1.0, renderOrder 0), no inner light
+  // HIGHLIGHTED: cited node with gold ring/halo (only place gold ring appears)
   const isUnread = !isRead && !isDimmed;
 
   return (
     <group ref={groupRef} position={position}>
-      {/* 1. ASK-THE-BRAIN Highlight: Gold Ring / Halo (ONLY PLACE GOLD MAY APPEAR) */}
+      {/* 1. ASK-THE-BRAIN HIGHLIGHT: Gold ring on cited nodes (only place gold ring appears) */}
       {isHighlighted && (
         <Sphere ref={haloRef} args={[baseSize * 1.45, 24, 24]}>
           <meshBasicMaterial
@@ -124,23 +116,28 @@ export default function Neuron({
         </Sphere>
       )}
 
-      {/* 2. UNREAD Inner Glow Sphere: slightly larger transparent sphere (1.5x) in CATEGORY color */}
+      {/* 2. INNER LIGHT (UNREAD only): small gold sphere at same position showing through translucent glass */}
       {isUnread && !isHighlighted && (
-        <Sphere args={[baseSize * 1.5, 20, 20]}>
+        <Sphere
+          ref={innerLightRef}
+          args={[baseSize * 0.45, 18, 18]}
+          renderOrder={1}
+        >
           <meshBasicMaterial
-            color={categoryColor}
+            ref={innerMatRef}
+            color="#ffc83d"
+            toneMapped={false}
             transparent
-            opacity={hovered ? 0.26 : 0.18}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
+            opacity={hovered ? 1.0 : 0.95}
           />
         </Sphere>
       )}
 
-      {/* 3. Main Core Sphere: Category Color */}
+      {/* 3. OUTER SHELL: Category color glass lantern */}
       <Sphere
         args={[baseSize, 28, 28]}
         castShadow
+        renderOrder={isUnread ? 2 : 0}
         onClick={() => topic && onClick(topic)}
         onPointerOver={() => {
           setHovered(true);
@@ -152,20 +149,15 @@ export default function Neuron({
         }}
       >
         <meshStandardMaterial
-          ref={coreMatRef}
-          color={isHighlighted ? '#ffd700' : categoryColor}
-          emissive={
-            isHighlighted
-              ? '#ffd700'
-              : isUnread
-              ? warmedEmissive
-              : categoryColor
-          }
-          emissiveIntensity={isHighlighted ? 2.5 : isUnread ? 1.15 : 0.22}
-          roughness={isUnread || isHighlighted ? 0.25 : 0.45}
-          metalness={isUnread ? 0.4 : 0.2}
-          transparent={isDimmed}
-          opacity={isDimmed ? 0.3 : 1.0}
+          color={categoryColor}
+          emissive={isHighlighted ? '#ffd700' : categoryColor}
+          emissiveIntensity={isHighlighted ? 2.5 : 0.20} // Low emissive intensity keeps color rich and saturated
+          roughness={0.35}
+          metalness={0.15}
+          transparent={isUnread || isDimmed}
+          opacity={isDimmed ? 0.3 : isUnread ? 0.7 : 1.0}
+          depthWrite={!isUnread}
+          side={THREE.FrontSide}
           toneMapped={false}
         />
       </Sphere>
