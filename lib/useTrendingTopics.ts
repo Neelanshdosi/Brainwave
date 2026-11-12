@@ -1,63 +1,55 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Topic } from '@/types/topic';
-import { generateBrainNeurons } from './neuronPosition';
+import { Topic, SimilarityEdgeData } from '@/types/topic';
 
-interface TrendsResponse {
-  topics: Omit<Topic, 'position'>[];
+interface EventsApiResponse {
+  events: Topic[];
+  edges: SimilarityEdgeData[];
   updatedAt: string;
 }
 
-export const useTrendingTopics = (region: string = 'global', refreshInterval = 300000) => {
+export const useTrendingTopics = (refreshInterval = 300000) => {
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [edges, setEdges] = useState<SimilarityEdgeData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  const fetchTopics = useCallback(async () => {
-  try {
-    setError(null);
-    console.log('🔄 Fetching topics for region:', region);
-    
-    const response = await fetch(`/api/trends?region=${region}`, {
-      cache: 'no-store'
-    });
-    
-    console.log('📥 Response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ API Error:', errorText);
-      throw new Error(`Failed to fetch trends: ${response.status} - ${errorText}`);
+  const fetchEvents = useCallback(async () => {
+    try {
+      setError(null);
+
+      const response = await fetch('/api/events', {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch events');
+      }
+
+      const data: EventsApiResponse = await response.json();
+
+      const eventsWithDates: Topic[] = data.events.map((ev) => ({
+        ...ev,
+        timestamp: new Date(ev.timestamp),
+      }));
+
+      setTopics(eventsWithDates);
+      setEdges(data.edges || []);
+      setLastUpdate(new Date(data.updatedAt));
+      setLoading(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      setLoading(false);
     }
-
-    const data: TrendsResponse = await response.json();
-    console.log('✅ Received topics:', data.topics.length);
-    
-    const positions = generateBrainNeurons(data.topics.length);
-    
-    const topicsWithPositions: Topic[] = data.topics.map((topic, index) => ({
-      ...topic,
-      position: positions[index],
-      timestamp: new Date(topic.timestamp),
-    }));
-
-    setTopics(topicsWithPositions);
-    setLastUpdate(new Date());
-    setLoading(false);
-  } catch (err) {
-    console.error('❌ Error fetching topics:', err);
-    setError(err instanceof Error ? err.message : 'Unknown error');
-    setLoading(false);
-  }
- }, [region]);
+  }, []);
 
   useEffect(() => {
-    fetchTopics();
-    
-    const interval = setInterval(fetchTopics, refreshInterval);
-    
-    return () => clearInterval(interval);
-  }, [fetchTopics, refreshInterval]);
+    fetchEvents();
 
-  return { topics, loading, error, lastUpdate, refetch: fetchTopics };
+    const interval = setInterval(fetchEvents, refreshInterval);
+
+    return () => clearInterval(interval);
+  }, [fetchEvents, refreshInterval]);
+
+  return { topics, edges, loading, error, lastUpdate, refetch: fetchEvents };
 };

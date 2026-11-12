@@ -68,6 +68,8 @@ const MOCK_TOPICS: Omit<Topic, 'id' | 'position'>[] = [
   },
 ];
 
+export const mockTopics = MOCK_TOPICS;
+
 export const generateMockTopics = (): Topic[] => {
   const positions = generateBrainNeurons(MOCK_TOPICS.length);
   

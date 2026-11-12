@@ -10,19 +10,27 @@ import FilterPanel from './FilterPanel';
 import NeuralConnections from './NeuralConnections';
 import { Topic } from '@/types/topic';
 import { useTrendingTopics } from '@/lib/useTrendingTopics';
-import { CATEGORY_COLORS } from '@/lib/neuronPosition';
 import BrainBoundary from './BrainBoundary';
+import AskTheBrain from './AskTheBrain';
 
 export default function BrainVisualization() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([
     'tech', 'politics', 'entertainment', 'science', 'sports', 'other'
   ]);
   const [showConnections, setShowConnections] = useState(false);
+  const [activeCitedEventIds, setActiveCitedEventIds] = useState<string[]>([]);
+  const [visitedTopicIds, setVisitedTopicIds] = useState<string[]>([]);
   
-  const { topics, loading, error, lastUpdate, refetch } = useTrendingTopics();
+  const { topics, edges, loading, error, lastUpdate, refetch } = useTrendingTopics();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [hoveredTopic, setHoveredTopic] = useState<Topic | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  const handleSelectTopic = (topic: Topic) => {
+    setSelectedTopic(topic);
+    // Mark as visited so light disappears
+    setVisitedTopicIds((prev) => (prev.includes(topic.id) ? prev : [...prev, topic.id]));
+  };
 
   const filteredTopics = useMemo(() => {
     return topics.filter(topic => selectedCategories.includes(topic.category));
@@ -31,7 +39,7 @@ export default function BrainVisualization() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await refetch();
-    setTimeout(() => setRefreshing(false), 1000);
+    setTimeout(() => setRefreshing(false), 800);
   };
 
   const handleCategoryToggle = (category: string) => {
@@ -42,11 +50,11 @@ export default function BrainVisualization() {
     );
   };
 
-  // Region removed (Global only)
-
   const toggleConnections = () => {
     setShowConnections(prev => !prev);
   };
+
+  const hasCitedFilter = activeCitedEventIds.length > 0;
 
   if (loading && topics.length === 0) {
     return <LoadingScreen />;
@@ -56,11 +64,11 @@ export default function BrainVisualization() {
     return (
       <div className="w-full h-screen bg-black flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-500 text-xl mb-4">Failed to load trends</p>
+          <p className="text-red-500 text-xl mb-4">Failed to load news events</p>
           <p className="text-gray-400 mb-4">{error}</p>
           <button
             onClick={refetch}
-            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors cursor-pointer"
           >
             Retry
           </button>
@@ -70,16 +78,24 @@ export default function BrainVisualization() {
   }
 
   return (
-    <div className="w-full h-screen bg-black relative">
+    <div className="w-full h-screen bg-black relative overflow-hidden select-none">
       {/* Tooltip */}
       {hoveredTopic && !selectedTopic && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-gray-700 z-10 max-w-md">
-          <p className="text-white font-medium truncate">{hoveredTopic.name}</p>
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-gray-900/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-gray-700 z-10 max-w-md pointer-events-none shadow-xl">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-xs uppercase font-bold text-purple-400">{hoveredTopic.category}</span>
+            {hoveredTopic.trend && (
+              <span className="text-[11px] text-gray-400">
+                • {hoveredTopic.trend.label} ({Math.round(hoveredTopic.trend.finalScore * 100)}%)
+              </span>
+            )}
+          </div>
+          <p className="text-white font-medium truncate text-sm">{hoveredTopic.name || hoveredTopic.title}</p>
           <p className="text-gray-400 text-xs">{hoveredTopic.source}</p>
         </div>
       )}
 
-      {/* Topic Card */}
+      {/* Topic Card Modal */}
       {selectedTopic && (
         <TopicCard topic={selectedTopic} onClose={() => setSelectedTopic(null)} />
       )}
@@ -92,6 +108,17 @@ export default function BrainVisualization() {
         onConnectionsToggle={toggleConnections}
         refreshing={refreshing}
         onRefresh={handleRefresh}
+      />
+
+      {/* "Ask the Brain" Semantic Search Bar */}
+      <AskTheBrain
+        onCitedEventsChange={setActiveCitedEventIds}
+        onSelectEventById={(id) => {
+          const found = topics.find((t) => t.id === id);
+          if (found) handleSelectTopic(found);
+        }}
+        activeCitedIds={activeCitedEventIds}
+        onClear={() => setActiveCitedEventIds([])}
       />
 
       {/* 3D Canvas */}
@@ -115,23 +142,32 @@ export default function BrainVisualization() {
           
           <Stars radius={100} depth={50} count={5000} factor={4} fade speed={1} />
           <BrainBoundary />
-          {showConnections && <NeuralConnections topics={filteredTopics} />}
+          {showConnections && <NeuralConnections topics={filteredTopics} edges={edges} />}
 
-          {filteredTopics.map((topic) => (
-            <Neuron
-              key={topic.id}
-              position={topic.position}
-              topic={topic}
-              onClick={setSelectedTopic}
-              onHover={setHoveredTopic}
-            />
-          ))}
+          {filteredTopics.map((topic) => {
+            const isHighlighted = hasCitedFilter && activeCitedEventIds.includes(topic.id);
+            const isDimmed = hasCitedFilter && !activeCitedEventIds.includes(topic.id);
+            const isVisited = visitedTopicIds.includes(topic.id);
+
+            return (
+              <Neuron
+                key={topic.id}
+                position={topic.position}
+                topic={topic}
+                onClick={handleSelectTopic}
+                onHover={setHoveredTopic}
+                isHighlighted={isHighlighted}
+                isDimmed={isDimmed}
+                isVisited={isVisited}
+              />
+            );
+          })}
 
           <OrbitControls
             enableZoom={true}
             enablePan={true}
             enableRotate={true}
-            autoRotate={true}
+            autoRotate={!hasCitedFilter && !selectedTopic}
             autoRotateSpeed={0.5}
             minDistance={5}
             maxDistance={15}
@@ -149,17 +185,17 @@ export default function BrainVisualization() {
         </Suspense>
       </Canvas>
 
-      {/* ✅ Updated Header */}
-      <div className="absolute top-4 left-4 z-10">
-        <h1 className="text-4xl font-bold text-white mb-1">Brainwave</h1>
-        <p className="text-gray-400">Global news, visualized in real-time.</p>
+      {/* Header */}
+      <div className="absolute top-4 left-4 z-10 pointer-events-auto">
+        <h1 className="text-4xl font-bold text-white mb-1 tracking-tight">Brainwave</h1>
+        <p className="text-gray-400 text-sm">Global news intelligence, visualized in 3D neural space.</p>
         {lastUpdate && (
           <p className="text-gray-500 text-xs mt-1">
             Updated {lastUpdate.toLocaleTimeString()}
           </p>
         )}
         <p className="text-purple-400 text-sm mt-1">
-          {filteredTopics.length} / {topics.length} stories active
+          {filteredTopics.length} / {topics.length} events active
         </p>
       </div>
 
@@ -167,7 +203,7 @@ export default function BrainVisualization() {
       <div className="absolute bottom-4 right-4 z-10">
         <button
           onClick={toggleConnections}
-          className={`w-[260px] flex items-center justify-between px-4 py-3 rounded-xl transition-all bg-gray-900/80 border ${
+          className={`w-[260px] flex items-center justify-between px-4 py-3 rounded-xl transition-all bg-gray-900/80 backdrop-blur-sm border cursor-pointer ${
             showConnections ? 'border-purple-500' : 'border-gray-700 hover:border-gray-600'
           }`}
         >
@@ -175,7 +211,7 @@ export default function BrainVisualization() {
             <div className="text-xl">🔗</div>
             <div className="text-left">
               <div className="text-gray-200 font-medium text-sm">Neural Connections</div>
-              <div className="text-gray-500 text-xs">Show topic relationships</div>
+              <div className="text-gray-500 text-xs">Show semantic similarity</div>
             </div>
           </div>
           <div
@@ -193,11 +229,11 @@ export default function BrainVisualization() {
       </div>
 
       {/* Instructions */}
-      <div className="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur-sm p-4 rounded-lg border border-gray-700 z-10 max-w-xs">
-        <p className="text-gray-300 text-sm">
+      <div className="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur-sm p-4 rounded-lg border border-gray-700 z-10 max-w-xs hidden sm:block">
+        <p className="text-gray-300 text-sm leading-relaxed">
           <span className="font-semibold text-white">Hover</span> to preview<br />
-          <span className="font-semibold text-white">Click</span> for details<br />
-          <span className="font-semibold text-white">Filter</span> by category<br />
+          <span className="font-semibold text-white">Click</span> for intelligence briefing<br />
+          <span className="font-semibold text-white">Ask the Brain</span> to query topics<br />
           <span className="font-semibold text-white">Drag</span> to rotate •{' '}
           <span className="font-semibold text-white">Scroll</span> to zoom
         </p>

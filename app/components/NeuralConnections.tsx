@@ -2,50 +2,44 @@
 
 import { useMemo } from 'react';
 import { Line } from '@react-three/drei';
-import { Topic } from '@/types/topic';
+import { Topic, SimilarityEdgeData } from '@/types/topic';
 import { CATEGORY_COLORS } from '@/lib/neuronPosition';
-import * as THREE from 'three';
 
 interface NeuralConnectionsProps {
   topics: Topic[];
+  edges?: SimilarityEdgeData[];
 }
 
-// Calculate similarity between two topics
-function calculateSimilarity(topic1: Topic, topic2: Topic): number {
-  let score = 0;
+export default function NeuralConnections({ topics, edges = [] }: NeuralConnectionsProps) {
+  const renderedEdges = useMemo(() => {
+    // 1. If explicit real similarity edges are provided from /api/events, use them!
+    if (edges && edges.length > 0) {
+      const topicMap = new Map<string, Topic>();
+      topics.forEach((t) => topicMap.set(t.id, t));
 
-  // Same category = strong connection
-  if (topic1.category === topic2.category) {
-    score += 0.6;
-  }
+      return edges.flatMap((edge) => {
+        const fromTopic = topicMap.get(edge.fromId);
+        const toTopic = topicMap.get(edge.toId);
+        // Only render if both endpoints are currently visible in filtered topics
+        if (!fromTopic || !toTopic) return [];
 
-  // Similar source (subreddit proximity)
-  if (topic1.source === topic2.source) {
-    score += 0.3;
-  }
+        const color =
+          fromTopic.category === toTopic.category
+            ? CATEGORY_COLORS[fromTopic.category] || '#8b5cf6'
+            : '#8b5cf6';
 
-  // Similar intensity = related trending
-  const intensityDiff = Math.abs(topic1.intensity - topic2.intensity);
-  if (intensityDiff < 0.2) {
-    score += 0.1;
-  }
+        return [
+          {
+            start: edge.fromPosition,
+            end: edge.toPosition,
+            strength: edge.similarity,
+            color,
+          },
+        ];
+      });
+    }
 
-  return score;
-}
-
-export default function NeuralConnections({ topics }: NeuralConnectionsProps) {
-  const validTopics = useMemo(() => {
-    return (topics || []).filter((t) => {
-      const p = t?.position as unknown;
-      return (
-        Array.isArray(p) &&
-        p.length === 3 &&
-        p.every((v) => Number.isFinite(v as number))
-      );
-    });
-  }, [topics]);
-
-  const connections = useMemo(() => {
+    // 2. Otherwise use similarEventIds from topics
     const lines: Array<{
       start: [number, number, number];
       end: [number, number, number];
@@ -53,72 +47,48 @@ export default function NeuralConnections({ topics }: NeuralConnectionsProps) {
       color: string;
     }> = [];
 
-    // Generate connections between related topics
-    for (let i = 0; i < validTopics.length; i++) {
-      for (let j = i + 1; j < validTopics.length; j++) {
-        const a = validTopics[i];
-        const b = validTopics[j];
-        const similarity = calculateSimilarity(a, b);
+    const topicMap = new Map<string, Topic>();
+    topics.forEach((t) => topicMap.set(t.id, t));
 
-        // Only show strong connections (>= 0.6)
-        if (similarity >= 0.6) {
-          const distance = Math.sqrt(
-            Math.pow(a.position[0] - b.position[0], 2) +
-            Math.pow(a.position[1] - b.position[1], 2) +
-            Math.pow(a.position[2] - b.position[2], 2)
-          );
+    const drawnPairs = new Set<string>();
 
-          // Only connect nearby neurons (distance < 4)
-          if (distance < 4) {
-            const catA = a.category;
-            const catB = b.category;
-            let color = '#8b5cf6';
-            if (catA === catB) {
-              color = CATEGORY_COLORS[catA as keyof typeof CATEGORY_COLORS];
-            } else {
-              // Blend two category colors 50/50 for cross-category links
-              const hexToRgb = (hex: string) => {
-                const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)!;
-                return {
-                  r: parseInt(m[1], 16),
-                  g: parseInt(m[2], 16),
-                  b: parseInt(m[3], 16),
-                };
-              };
-              const rgbToHex = (r: number, g: number, b: number) =>
-                '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
-              const a = hexToRgb(CATEGORY_COLORS[catA as keyof typeof CATEGORY_COLORS]);
-              const b = hexToRgb(CATEGORY_COLORS[catB as keyof typeof CATEGORY_COLORS]);
-              color = rgbToHex(
-                Math.round((a.r + b.r) / 2),
-                Math.round((a.g + b.g) / 2),
-                Math.round((a.b + b.b) / 2)
-              );
-            }
-            lines.push({
-              start: a.position,
-              end: b.position,
-              strength: similarity,
-              color,
-            });
-          }
-        }
+    for (const t of topics) {
+      if (!t.similarEventIds) continue;
+      for (const targetId of t.similarEventIds) {
+        const target = topicMap.get(targetId);
+        if (!target) continue;
+
+        const pairKey = [t.id, target.id].sort().join('::');
+        if (drawnPairs.has(pairKey)) continue;
+        drawnPairs.add(pairKey);
+
+        const color =
+          t.category === target.category
+            ? CATEGORY_COLORS[t.category] || '#8b5cf6'
+            : '#8b5cf6';
+
+        lines.push({
+          start: t.position,
+          end: target.position,
+          strength: 0.7,
+          color,
+        });
       }
     }
 
     return lines;
-  }, [validTopics]);
+  }, [topics, edges]);
 
   return (
     <>
-      {connections.map((connection, index) => (
+      {renderedEdges.map((edge, index) => (
         <Line
-          key={`connection-${index}`}
-          points={[connection.start, connection.end]}
-          color={connection.color}
-          lineWidth={1.25}
+          key={`edge-${index}`}
+          points={[edge.start, edge.end]}
+          color={edge.color}
+          lineWidth={1.3}
           transparent
-          opacity={Math.min(0.6, connection.strength * 0.45)}
+          opacity={Math.min(0.65, Math.max(0.15, edge.strength * 0.5))}
           dashed={false}
         />
       ))}

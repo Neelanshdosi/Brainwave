@@ -1,32 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { LRUCache } from '@/lib/server/cache';
+import { RateLimiter, getClientIp } from '@/lib/server/rateLimit';
+import { logger } from '@/lib/server/logger';
 
 interface SummarizeRequest {
-  url: string;
+  url?: string;
   title: string;
   description?: string;
 }
 
+// 30 min TTL LRU Cache
+const summarizeCache = new LRUCache<string>(300, 30 * 60 * 1000);
+// 10 requests per minute per IP
+const summarizeLimiter = new RateLimiter(10, 60 * 1000);
+
 const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
 const MODEL_URL = 'https://api-inference.huggingface.co/models/facebook/bart-large-cnn';
 
-async function fetchArticleContent(articleUrl: string): Promise<string | null> {
-  try {
-    // For NewsAPI articles, we'll use the description
-    // Fetching full article content would require web scraping which is complex
-    console.log('📄 Using article description for summary');
-    return null; // Will use description passed in request
-  } catch (error) {
-    console.error('Error fetching article:', error);
-    return null;
-  }
-}
-
-async function generateSummary(content: string, title: string): Promise<string> {
-  console.log('🔑 API Key exists:', !!HUGGINGFACE_API_KEY);
-  
+async function generateSummary(content: string): Promise<string> {
   if (!HUGGINGFACE_API_KEY) {
-    // Return content as-is if no API key
-    return content.substring(0, 200) + '...';
+    return content.length > 200 ? content.substring(0, 200) + '...' : content;
   }
 
   if (content.length < 100) {
@@ -34,7 +27,8 @@ async function generateSummary(content: string, title: string): Promise<string> 
   }
 
   try {
-    console.log('📤 Sending to Hugging Face for summarization...');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     const response = await fetch(MODEL_URL, {
       method: 'POST',
@@ -50,75 +44,87 @@ async function generateSummary(content: string, title: string): Promise<string> 
           do_sample: false,
         },
       }),
+      signal: controller.signal,
     });
-
-    console.log('📥 Response status:', response.status);
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error('❌ Hugging Face API error:', error);
-      
-      if (response.status === 503) {
-        console.log('⏳ Model loading, using fallback...');
-        return content.substring(0, 200) + '...';
-      }
-      
-      throw new Error(`API request failed: ${response.status}`);
+      logger.warn(`HuggingFace API returned status ${response.status}`);
+      return content.length > 200 ? content.substring(0, 200) + '...' : content;
     }
 
     const data = await response.json();
-    console.log('✅ Received summary data');
-    
     if (Array.isArray(data) && data[0]?.summary_text) {
       return data[0].summary_text;
-    } else if (data.summary_text) {
+    } else if (data?.summary_text) {
       return data.summary_text;
     }
     
-    return content.substring(0, 200) + '...';
-    
-  } catch (error) {
-    console.error('❌ Summary generation error:', error);
-    return content.substring(0, 200) + '...';
+    return content.length > 200 ? content.substring(0, 200) + '...' : content;
+  } catch (err) {
+    logger.warn('Failed to call summarization service', err);
+    return content.length > 200 ? content.substring(0, 200) + '...' : content;
   }
 }
 
 export async function POST(request: NextRequest) {
-  console.log('📨 Received summarize request');
-  
   try {
-    const body: SummarizeRequest = await request.json();
-    const { url, title, description } = body;
-    
-    console.log('📋 Request:', { url, title });
+    // 1. Per-IP Rate Limiting (10 req/min)
+    const ip = getClientIp(request);
+    const rateLimit = summarizeLimiter.check(ip);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rateLimit.retryAfterSeconds),
+          },
+        }
+      );
+    }
 
-    // Use description as content
-    const content = description || title;
-    
-    if (!content) {
-      return NextResponse.json({ 
-        summary: `Breaking news: ${title}`,
-        success: true 
+    // 2. Input Validation
+    let body: SummarizeRequest;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+
+    const { url, title, description } = body;
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+      return NextResponse.json({ error: 'Title is required' }, { status: 400 });
+    }
+
+    const cacheKey = (url && url.trim().length > 0 ? url.trim() : title.trim()).toLowerCase();
+
+    // 3. In-memory LRU Cache Check (30 min TTL)
+    const cachedSummary = summarizeCache.get(cacheKey);
+    if (cachedSummary) {
+      return NextResponse.json({
+        summary: cachedSummary,
+        cached: true,
+        success: true,
       });
     }
 
-    // Generate AI summary
-    const summary = await generateSummary(content, title);
-    
-    console.log('✅ Summary generated successfully');
+    // 4. Summarization logic
+    const content = (description || title).trim();
+    const summary = await generateSummary(content);
 
-    return NextResponse.json({ 
-      summary: summary,
-      success: true 
+    // 5. Store in cache
+    summarizeCache.set(cacheKey, summary);
+
+    return NextResponse.json({
+      summary,
+      cached: false,
+      success: true,
     });
-
   } catch (error) {
-    console.error('❌ Summarize API error:', error);
+    logger.error('Unhandled error in summarize API', error);
     return NextResponse.json(
-      { 
-        error: error instanceof Error ? error.message : 'Failed to generate summary',
-        success: false 
-      },
+      { error: 'Failed to generate summary' },
       { status: 500 }
     );
   }

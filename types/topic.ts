@@ -1,14 +1,29 @@
+import { RawItem } from '@/lib/server/sources/types';
+import { TrendScore } from '@/lib/server/trend';
+
 export interface Topic {
   id: string;
   name: string;
+  title?: string;
   category: 'tech' | 'politics' | 'entertainment' | 'science' | 'sports' | 'other';
-  intensity: number; // 0-1 scale
+  intensity: number; // 0-1 scale (from trend.finalScore)
+  trend?: TrendScore;
   summary: string;
-  aiSummary?: string; // AI-generated summary
+  aiSummary?: string;
   source: string;
   timestamp: Date | string;
   position: [number, number, number];
   url?: string;
+  articles?: RawItem[];
+  similarEventIds?: string[];
+}
+
+export interface SimilarityEdgeData {
+  fromId: string;
+  toId: string;
+  fromPosition: [number, number, number];
+  toPosition: [number, number, number];
+  similarity: number;
 }
 
 export interface NeuronData {
