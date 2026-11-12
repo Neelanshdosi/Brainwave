@@ -14,12 +14,12 @@ interface FilterPanelProps {
 }
 
 const CATEGORIES = [
-  { id: 'tech', label: 'Technology', color: '#00d4ff' },
-  { id: 'politics', label: 'Politics', color: '#ff4757' },
-  { id: 'entertainment', label: 'Entertainment', color: '#ffa502' },
-  { id: 'science', label: 'Science', color: '#1e90ff' },
-  { id: 'sports', label: 'Sports', color: '#2ed573' },
-  { id: 'other', label: 'Other', color: '#a29bfe' },
+  { id: 'tech', label: 'Technology', color: CATEGORY_COLORS.tech },
+  { id: 'politics', label: 'Politics', color: CATEGORY_COLORS.politics },
+  { id: 'entertainment', label: 'Entertainment', color: CATEGORY_COLORS.entertainment },
+  { id: 'science', label: 'Science', color: CATEGORY_COLORS.science },
+  { id: 'sports', label: 'Sports', color: CATEGORY_COLORS.sports },
+  { id: 'other', label: 'Other', color: CATEGORY_COLORS.other },
 ];
 
 // Region options removed; always global

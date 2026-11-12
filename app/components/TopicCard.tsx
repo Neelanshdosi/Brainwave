@@ -4,6 +4,7 @@ import { Topic } from '@/types/topic';
 import { X, ExternalLink, Sparkles, CheckCircle2, AlertCircle, FileText, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { BriefingData, isEventBriefable, normalizeForVerification } from '@/lib/server/verifyCitations';
+import { CATEGORY_COLORS } from '@/lib/neuronPosition';
 
 interface TopicCardProps {
   topic: Topic;
@@ -21,19 +22,7 @@ export default function TopicCard({ topic, onClose }: TopicCardProps) {
       : topic.timestamp;
   const timeAgo = Math.max(0, Math.floor((Date.now() - timestamp.getTime()) / 60000));
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      tech: '#00d4ff',
-      politics: '#ff4757',
-      entertainment: '#ffa502',
-      science: '#1e90ff',
-      sports: '#2ed573',
-      other: '#a29bfe',
-    };
-    return colors[category] || colors.other;
-  };
-
-  const color = getCategoryColor(topic.category);
+  const color = (topic && CATEGORY_COLORS[topic.category]) || CATEGORY_COLORS.other;
 
   // Gate the briefing feature: requires >= 2 distinct sources OR >= 500 chars body text
   const { briefable, reason: unbriefableReason } = isEventBriefable(topic);

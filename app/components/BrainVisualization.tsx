@@ -10,6 +10,7 @@ import FilterPanel from './FilterPanel';
 import NeuralConnections from './NeuralConnections';
 import { Topic } from '@/types/topic';
 import { useTrendingTopics } from '@/lib/useTrendingTopics';
+import { CATEGORY_COLORS } from '@/lib/neuronPosition';
 import BrainBoundary from './BrainBoundary';
 import AskTheBrain from './AskTheBrain';
 
@@ -19,7 +20,40 @@ export default function BrainVisualization() {
   ]);
   const [showConnections, setShowConnections] = useState(false);
   const [activeCitedEventIds, setActiveCitedEventIds] = useState<string[]>([]);
-  const [visitedTopicIds, setVisitedTopicIds] = useState<string[]>([]);
+  
+  // Track read event IDs in a Set and persist in localStorage
+  const [readTopicIds, setReadTopicIds] = useState<Set<string>>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('brainwave:readEvents');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) {
+            return new Set<string>(parsed);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to load read events from localStorage', err);
+    }
+    return new Set<string>();
+  });
+
+  const markTopicAsRead = (topicId: string) => {
+    setReadTopicIds((prev) => {
+      if (prev.has(topicId)) return prev;
+      const next = new Set(prev);
+      next.add(topicId);
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('brainwave:readEvents', JSON.stringify(Array.from(next)));
+        }
+      } catch (err) {
+        console.warn('Failed to save read events to localStorage', err);
+      }
+      return next;
+    });
+  };
   
   const { topics, edges, loading, error, lastUpdate, refetch } = useTrendingTopics();
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
@@ -28,8 +62,7 @@ export default function BrainVisualization() {
 
   const handleSelectTopic = (topic: Topic) => {
     setSelectedTopic(topic);
-    // Mark as visited so light disappears
-    setVisitedTopicIds((prev) => (prev.includes(topic.id) ? prev : [...prev, topic.id]));
+    markTopicAsRead(topic.id);
   };
 
   const filteredTopics = useMemo(() => {
@@ -54,7 +87,8 @@ export default function BrainVisualization() {
     setShowConnections(prev => !prev);
   };
 
-  const hasCitedFilter = activeCitedEventIds.length > 0;
+  // Only consider active when the array is non-empty
+  const hasCitedFilter = Array.isArray(activeCitedEventIds) && activeCitedEventIds.length > 0;
 
   if (loading && topics.length === 0) {
     return <LoadingScreen />;
@@ -152,7 +186,7 @@ export default function BrainVisualization() {
           {filteredTopics.map((topic) => {
             const isHighlighted = hasCitedFilter && activeCitedEventIds.includes(topic.id);
             const isDimmed = hasCitedFilter && !activeCitedEventIds.includes(topic.id);
-            const isVisited = visitedTopicIds.includes(topic.id);
+            const isRead = readTopicIds.has(topic.id);
 
             return (
               <Neuron
@@ -163,7 +197,7 @@ export default function BrainVisualization() {
                 onHover={setHoveredTopic}
                 isHighlighted={isHighlighted}
                 isDimmed={isDimmed}
-                isVisited={isVisited}
+                isRead={isRead}
               />
             );
           })}
@@ -233,16 +267,37 @@ export default function BrainVisualization() {
         </button>
       </div>
 
-      {/* Instructions */}
-      <div className="absolute bottom-4 left-4 bg-gray-900/80 backdrop-blur-sm p-4 rounded-lg border border-gray-700 z-10 max-w-xs hidden sm:block">
-        <p className="text-gray-300 text-sm leading-relaxed">
-          <span className="font-semibold text-white">Hover</span> to preview<br />
-          <span className="font-semibold text-white">Click</span> for intelligence briefing<br />
-          <span className="font-semibold text-white">Ask the Brain</span> to query topics<br />
-          <span className="font-semibold text-white">Drag</span> to rotate •{' '}
-          <span className="font-semibold text-white">Scroll</span> to zoom
-        </p>
-        <p className="text-gray-500 text-xs mt-3 pt-3 border-t border-gray-700">
+      {/* Legend & Instructions */}
+      <div className="absolute bottom-4 left-4 bg-gray-900/90 backdrop-blur-sm p-3.5 rounded-xl border border-gray-700 z-10 max-w-xs hidden sm:block shadow-2xl">
+        {/* Category Legend */}
+        <div className="mb-2.5 pb-2.5 border-b border-gray-800">
+          <div className="text-[11px] font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+            Category Legend
+          </div>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs">
+            {Object.entries(CATEGORY_COLORS).map(([cat, col]) => (
+              <div key={cat} className="flex items-center gap-1.5 capitalize text-gray-300">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                  style={{ backgroundColor: col }}
+                />
+                <span className="text-[11px]">{cat}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 pt-2 border-t border-gray-800/60 flex items-center gap-2 text-[11px] text-gray-300">
+            <span className="w-2.5 h-2.5 rounded-full border border-white/50 bg-white/80 shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-pulse shrink-0" />
+            <span>Soft glow = Unread event</span>
+          </div>
+        </div>
+
+        <div className="text-gray-300 text-xs leading-relaxed space-y-0.5">
+          <p><span className="font-semibold text-white">Hover</span> to preview</p>
+          <p><span className="font-semibold text-white">Click</span> to open & mark read</p>
+          <p><span className="font-semibold text-white">Ask the Brain</span> highlights cited (gold)</p>
+          <p><span className="font-semibold text-white">Drag</span> rotate • <span className="font-semibold text-white">Scroll</span> zoom</p>
+        </div>
+        <p className="text-gray-500 text-[10px] mt-2 pt-1.5 border-t border-gray-800">
           Made By Neelansh D
         </p>
       </div>
