@@ -337,6 +337,8 @@ Your final response MUST be pure JSON matching this exact structure:
         let reason = `Gemini API error (HTTP ${response.status})`;
         if (response.status === 400) {
           reason = `Bad request to model ${modelId} (${errorText.slice(0, 80)})`;
+        } else if (response.status === 402) {
+          reason = 'Gemini prepayment credits depleted (HTTP 402) - please top up or use a free tier project in AI Studio';
         } else if (response.status === 403 || response.status === 401) {
           reason = 'Invalid Gemini API key or unauthorized';
         } else if (response.status === 404) {
