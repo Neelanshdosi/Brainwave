@@ -17,6 +17,40 @@ interface NeuronProps {
   isRead?: boolean;
 }
 
+// Global texture cache for radial gradient textures to prevent recreation
+const gradientTextureCache = new Map<string, THREE.CanvasTexture>();
+
+function getRadialGradientTexture(color: string, centerColor?: string): THREE.CanvasTexture {
+  const key = `${color}-${centerColor || ''}`;
+  if (gradientTextureCache.has(key)) {
+    return gradientTextureCache.get(key)!;
+  }
+
+  if (typeof document === 'undefined') {
+    // SSR fallback dummy texture
+    const dummy = new THREE.CanvasTexture(null as unknown as HTMLCanvasElement);
+    return dummy;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, centerColor || color);
+    grad.addColorStop(0.4, color);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  gradientTextureCache.set(key, texture);
+  return texture;
+}
+
 export default function Neuron({
   position,
   topic,
@@ -27,8 +61,8 @@ export default function Neuron({
   isRead = false,
 }: NeuronProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const innerLightRef = useRef<THREE.Mesh>(null);
-  const innerMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const auraSpriteRef = useRef<THREE.Sprite>(null);
+  const innerLightSpriteRef = useRef<THREE.Sprite>(null);
   const haloRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
 
@@ -41,6 +75,15 @@ export default function Neuron({
     if (!topic) return '#3b82f6';
     return (CATEGORY_COLORS as Record<string, string>)[topic.category] || CATEGORY_COLORS.politics;
   }, [topic?.category]);
+
+  // Textures: category aura texture & gold inner light texture
+  const auraTexture = useMemo(() => {
+    return getRadialGradientTexture(categoryColor);
+  }, [categoryColor]);
+
+  const goldTexture = useMemo(() => {
+    return getRadialGradientTexture('#ffc83d', '#fff3c4');
+  }, []);
 
   // Phase offset per node derived deterministically from topic id or coordinates
   const phaseOffset = useMemo(() => {
@@ -77,14 +120,29 @@ export default function Neuron({
       );
     }
 
-    // Gentle pulse of inner gold light (+/-10% scale and opacity over ~2.5s cycle)
-    if (innerLightRef.current && innerMatRef.current) {
-      const pulse = Math.sin(state.clock.elapsedTime * (Math.PI * 2 / 2.5) + phaseOffset);
-      const innerScale = 1.0 + pulse * 0.10;
-      innerLightRef.current.scale.setScalar(innerScale);
+    // Pulse inner gold light (+/-12% scale and opacity over 2 to 3 second cycle, phase offset by id hash)
+    if (innerLightSpriteRef.current) {
+      const cycleDuration = 2.5;
+      const pulse = Math.sin(state.clock.elapsedTime * (Math.PI * 2 / cycleDuration) + phaseOffset);
+      const innerScale = (baseSize * 1.3) * (1.0 + pulse * 0.12);
+      innerLightSpriteRef.current.scale.set(innerScale, innerScale, 1);
 
-      const targetOpacity = (hovered ? 1.0 : 0.95) + pulse * 0.04;
-      innerMatRef.current.opacity = Math.max(0.85, Math.min(1.0, targetOpacity));
+      const baseOpacity = hovered ? 1.0 : 0.95;
+      const targetOpacity = Math.max(0.7, Math.min(1.0, baseOpacity + pulse * 0.12));
+      const mat = innerLightSpriteRef.current.material as THREE.SpriteMaterial;
+      if (mat) {
+        mat.opacity = targetOpacity;
+      }
+    }
+
+    // Aura sprite scale & opacity
+    if (auraSpriteRef.current) {
+      const auraScale = baseSize * 3.2;
+      auraSpriteRef.current.scale.set(auraScale, auraScale, 1);
+      const mat = auraSpriteRef.current.material as THREE.SpriteMaterial;
+      if (mat) {
+        mat.opacity = hovered ? 0.45 : 0.35;
+      }
     }
 
     // Gold halo breathing on cited nodes
@@ -95,8 +153,8 @@ export default function Neuron({
   });
 
   // State calculations:
-  // UNREAD: translucent category glass shell (opacity 0.7, renderOrder 2) with inner gold sphere (renderOrder 1)
-  // READ: solid category shell (opacity 1.0, renderOrder 0), no inner light
+  // UNREAD: outer category aura sprite + translucent category shell (opacity 0.5) + inner gold light sprite
+  // READ: solid category shell (opacity 1.0), no aura or inner light sprites
   // HIGHLIGHTED: cited node with gold ring/halo (only place gold ring appears)
   const isUnread = !isRead && !isDimmed;
 
@@ -116,24 +174,20 @@ export default function Neuron({
         </Sphere>
       )}
 
-      {/* 2. INNER LIGHT (UNREAD only): small gold sphere at same position showing through translucent glass */}
+      {/* 2. UNREAD LAYER 1: OUTER AURA (Category color gradient sprite fading into dark space) */}
       {isUnread && !isHighlighted && (
-        <Sphere
-          ref={innerLightRef}
-          args={[baseSize * 0.45, 18, 18]}
-          renderOrder={1}
-        >
-          <meshBasicMaterial
-            ref={innerMatRef}
-            color="#ffc83d"
-            toneMapped={false}
+        <sprite ref={auraSpriteRef} renderOrder={1}>
+          <spriteMaterial
+            map={auraTexture}
             transparent
-            opacity={hovered ? 1.0 : 0.95}
+            opacity={hovered ? 0.45 : 0.35}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
           />
-        </Sphere>
+        </sprite>
       )}
 
-      {/* 3. OUTER SHELL: Category color glass lantern */}
+      {/* 3. UNREAD LAYER 2 / NORMAL NODE: SHELL in category color */}
       <Sphere
         args={[baseSize, 28, 28]}
         castShadow
@@ -155,12 +209,24 @@ export default function Neuron({
           roughness={0.35}
           metalness={0.15}
           transparent={isUnread || isDimmed}
-          opacity={isDimmed ? 0.3 : isUnread ? 0.7 : 1.0}
+          opacity={isDimmed ? 0.3 : isUnread ? 0.5 : 1.0}
           depthWrite={!isUnread}
           side={THREE.FrontSide}
-          toneMapped={false}
         />
       </Sphere>
+
+      {/* 4. UNREAD LAYER 3: INNER LIGHT (Gold gradient sprite fading out smoothly) */}
+      {isUnread && !isHighlighted && (
+        <sprite ref={innerLightSpriteRef} renderOrder={3}>
+          <spriteMaterial
+            map={goldTexture}
+            transparent
+            opacity={hovered ? 1.0 : 0.95}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </sprite>
+      )}
     </group>
   );
 }
