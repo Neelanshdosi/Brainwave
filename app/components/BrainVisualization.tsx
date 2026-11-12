@@ -228,9 +228,9 @@ export default function BrainVisualization() {
             <Bloom
               mipmapBlur
               luminanceThreshold={1.0}
-              luminanceSmoothing={0.15}
-              intensity={1.2}
-              radius={0.7}
+              luminanceSmoothing={0.2}
+              intensity={1.4}
+              radius={0.75}
             />
           </EffectComposer>
         </Suspense>

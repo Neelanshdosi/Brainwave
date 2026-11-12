@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Sphere } from '@react-three/drei';
 import * as THREE from 'three';
@@ -42,8 +42,6 @@ export default function Neuron({
     return (CATEGORY_COLORS as Record<string, string>)[topic.category] || CATEGORY_COLORS.politics;
   }, [topic?.category]);
 
-  const threeCategoryColor = useMemo(() => new THREE.Color(categoryColor), [categoryColor]);
-
   // Phase offset per node derived deterministically from topic id or coordinates
   const phaseOffset = useMemo(() => {
     if (topic?.id) {
@@ -62,9 +60,8 @@ export default function Neuron({
     targetPos.current.set(...position);
   }, [position]);
 
-  // Saturated HDR gold with low blue channel: new THREE.Color(2.8, 1.4, 0.2)
-  // so it blooms as warm gold/amber without turning white-pink
-  const hdrGoldBase = useMemo(() => new THREE.Color(2.8, 1.4, 0.2), []);
+  // Base gold color for inner light: '#ffc83d'
+  const baseGoldColor = useMemo(() => new THREE.Color('#ffc83d'), []);
 
   useFrame((state, delta) => {
     if (groupRef.current) {
@@ -83,16 +80,17 @@ export default function Neuron({
       );
     }
 
-    // Pulse HDR gold inner light (multiplier range ~0.75x to 1.15x of base values)
-    // Hover adds +0.35x
+    // Pulse inner gold light above bloom threshold:
+    // Base multiplier pulses between ~2.2 and ~3.4 on a 2 to 3 second cycle.
+    // Hover adds +1.0 to the multiplier.
     if (innerMatRef.current) {
       const cycleDuration = 2.5;
       const sinWave = Math.sin(state.clock.elapsedTime * (Math.PI * 2 / cycleDuration) + phaseOffset);
-      let pulseMultiplier = 0.95 + sinWave * 0.20; // range [0.75, 1.15]
+      let multiplier = 2.8 + sinWave * 0.6;
       if (hovered) {
-        pulseMultiplier += 0.35;
+        multiplier += 1.0;
       }
-      innerMatRef.current.color.copy(hdrGoldBase).multiplyScalar(pulseMultiplier);
+      innerMatRef.current.color.copy(baseGoldColor).multiplyScalar(multiplier);
     }
 
     // Gold halo breathing on cited nodes (Ask-the-Brain)
@@ -103,32 +101,10 @@ export default function Neuron({
   });
 
   // State calculations:
-  // UNREAD: translucent category glass shell with category-colored fresnel rim blooming faintly (1.4x) + warm HDR gold inner light
-  // READ: solid category shell (opacity 1.0, emissive 0.20, toneMapped true), no inner light, no rim bloom
+  // UNREAD: translucent category glass shell (opacity 0.45, emissive 0.15, toneMapped true) + inner bloom light sphere (radius 0.4x, gold * multiplier > 1, toneMapped false)
+  // READ: solid category shell (opacity 1.0, emissive 0.20, toneMapped true), no inner light
   // HIGHLIGHTED: cited node with bright blooming gold ring (>1); dimmed nodes get opacity ~0.3
   const isUnread = !isRead && !isDimmed;
-
-  // Fresnel rim shader hook for unread shells:
-  // Adds pow(1.0 - abs(dot(normal, viewDir)), 2.5) * categoryColor * 1.1 to emissive (barely above threshold)
-  const onBeforeCompileShell = useCallback((shader: THREE.WebGLProgramParametersWithUniforms) => {
-    if (!isUnread) return;
-    shader.uniforms.uRimColor = { value: threeCategoryColor };
-    shader.fragmentShader = `
-      uniform vec3 uRimColor;
-      ${shader.fragmentShader}
-    `;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <dithering_fragment>',
-      `
-      #include <dithering_fragment>
-      #ifdef USE_NORMAL
-        vec3 rimViewDir = normalize(vViewPosition);
-        float rimFactor = pow(1.0 - abs(dot(vNormal, -rimViewDir)), 2.5);
-        gl_FragColor.rgb += uRimColor * (rimFactor * 1.1);
-      #endif
-      `
-    );
-  }, [isUnread, threeCategoryColor]);
 
   return (
     <group ref={groupRef} position={position}>
@@ -147,22 +123,22 @@ export default function Neuron({
         </Sphere>
       )}
 
-      {/* 2. INNER LIGHT (UNREAD only): saturated HDR gold (2.8, 1.4, 0.2) blooming as warm gold/amber */}
+      {/* 2. INNER LIGHT (UNREAD only): blooms > 1.0 through the colored glass */}
       {isUnread && !isHighlighted && (
         <Sphere
           ref={innerLightRef}
-          args={[baseSize * 0.5, 20, 20]}
+          args={[baseSize * 0.4, 20, 20]}
           renderOrder={1}
         >
           <meshBasicMaterial
             ref={innerMatRef}
-            color={hdrGoldBase}
+            color={new THREE.Color('#ffc83d').multiplyScalar(hovered ? 3.8 : 2.8)}
             toneMapped={false}
           />
         </Sphere>
       )}
 
-      {/* 3. SHELL: Category color glass lantern with blooming fresnel rim */}
+      {/* 3. SHELL: Category color glass lantern */}
       <Sphere
         args={[baseSize, 28, 28]}
         castShadow
@@ -187,9 +163,7 @@ export default function Neuron({
           opacity={isDimmed ? 0.3 : isUnread ? 0.45 : 1.0}
           depthWrite={!isUnread}
           side={THREE.FrontSide}
-          toneMapped={!isUnread}
-          onBeforeCompile={onBeforeCompileShell}
-          customProgramCacheKey={() => (isUnread ? `unread-rim-${categoryColor}` : 'read-solid')}
+          toneMapped={true}
         />
       </Sphere>
     </group>
