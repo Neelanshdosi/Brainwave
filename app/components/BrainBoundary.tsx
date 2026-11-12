@@ -5,14 +5,18 @@ import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 
+// Named constants for easy tweaking
+export const BRAIN_COLOR = '#0e0820'; // very dark violet
+export const BRAIN_OPACITY = 0.22;
+
 export default function BrainBoundary() {
   const groupRef = useRef<THREE.Group>(null);
 
   // Load brain model from public/brain.glb
   const { scene } = useGLTF('/brain.glb');
 
-  // Build a wireframe/edges version of the GLB, scaled and centered
-  const wireframeGroup = useMemo(() => {
+  // Build a dark subtle silhouette of the GLB with faint edge outline
+  const silhouetteGroup = useMemo(() => {
     const root = new THREE.Group();
 
     // Clone to avoid mutating original scene
@@ -26,28 +30,45 @@ export default function BrainBoundary() {
     box.getCenter(center);
 
     // Target width so neurons fit inside nicely
-    const targetWidth = 4.6; // world units (slightly tighter)
+    const targetWidth = 4.6; // world units
     const scaleFactor = size.x > 0 ? targetWidth / size.x : 1;
 
-    // Traverse meshes and create wireframe materials
+    // Traverse all meshes and apply unlit dark silhouette + faint outline edge
     clone.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
       if ((mesh as any).isMesh && mesh.geometry) {
-        // Ensure indexed geometry for wireframe
         const geometry = mesh.geometry;
 
-        // Translucent surface to make model appear see-through (under wireframe)
+        // 1. Core unlit dark silhouette (renders first with renderOrder 0)
+        // MeshBasicMaterial so scene lights and bloom cannot brighten it
         const surfaceMaterial = new THREE.MeshBasicMaterial({
-          color: '#8b5cf6',
+          color: BRAIN_COLOR,
           transparent: true,
-          opacity: 0.06,
+          opacity: BRAIN_OPACITY,
           depthWrite: false,
           side: THREE.DoubleSide,
+          toneMapped: true,
         });
         const surfaceMesh = new THREE.Mesh(geometry, surfaceMaterial);
         surfaceMesh.applyMatrix4(mesh.matrixWorld);
+        surfaceMesh.renderOrder = 0;
         root.add(surfaceMesh);
-        // Note: wireframe lines and edge lines removed for clearer neuron visibility
+
+        // 2. Faint readable outline: slightly scaled 1.01x, BackSide, unlit #3b2a6b
+        // Stays well below bloom threshold (no bloom contribution)
+        const outlineMaterial = new THREE.MeshBasicMaterial({
+          color: '#3b2a6b',
+          transparent: true,
+          opacity: 0.18,
+          depthWrite: false,
+          side: THREE.BackSide,
+          toneMapped: true,
+        });
+        const outlineMesh = new THREE.Mesh(geometry, outlineMaterial);
+        outlineMesh.applyMatrix4(mesh.matrixWorld);
+        outlineMesh.scale.multiplyScalar(1.01);
+        outlineMesh.renderOrder = 0;
+        root.add(outlineMesh);
       }
     });
 
@@ -72,9 +93,8 @@ export default function BrainBoundary() {
   });
 
   return (
-    <group ref={groupRef}>
-      {/* Wireframe brain boundary from GLB */}
-      <primitive object={wireframeGroup} />
+    <group ref={groupRef} renderOrder={0}>
+      <primitive object={silhouetteGroup} />
     </group>
   );
 }

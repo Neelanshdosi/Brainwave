@@ -142,7 +142,7 @@ export default function Neuron({
       <Sphere
         args={[baseSize, 28, 28]}
         castShadow
-        renderOrder={isUnread ? 2 : 0}
+        renderOrder={isUnread ? 2 : 1}
         onClick={() => topic && onClick(topic)}
         onPointerOver={() => {
           setHovered(true);
